@@ -28,6 +28,7 @@
   ppx_jane
   ppx_yojson_conv
   yojson
+  cohttp
   cohttp-async
   conduit-async
   async_websocket
