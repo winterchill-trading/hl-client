@@ -11,10 +11,14 @@ module Response : sig
   [@@deriving sexp_of]
 end
 
-(** [post_json uri json] POSTs [json] with [Content-Type: application/json] and reads the
-    whole response body. Connection and transport failures become [Error]; any HTTP status
-    is returned as [Ok]. *)
-val post_json : Uri.t -> Yojson.Safe.t -> Response.t Or_error.t Deferred.t
+(** [post_json uri json] POSTs [json] with [Content-Type: application/json] plus any extra
+    [headers] and reads the whole response body. Connection and transport failures become
+    [Error]; any HTTP status is returned as [Ok]. *)
+val post_json
+  :  ?headers:(string * string) list
+  -> Uri.t
+  -> Yojson.Safe.t
+  -> Response.t Or_error.t Deferred.t
 
 (** [decode_json response ~f] parses the body as JSON and applies [f]; parse and decode
     exceptions, and a non-2xx status, become an [Error] that includes the status and the

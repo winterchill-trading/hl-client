@@ -6,7 +6,9 @@ open Hl_protocol
 type t =
   { base_url : Uri.t (** HTTP root; [/info] and [/exchange] are resolved against it *)
   ; ws_url : Uri.t (** websocket endpoint, e.g. [ws://localhost:3000/ws] *)
-  ; address : Address.t option (** default [user] for account-scoped info requests *)
+  ; address : Address.t option
+  (** default [user] for account-scoped info requests, and the [X-Address] header of
+      exchange requests *)
   }
 [@@deriving sexp_of]
 

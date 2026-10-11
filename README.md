@@ -94,6 +94,8 @@ val cancel_by_cloid : ... -> Cancel_by_cloid.t list -> ...
 val modify : ... -> Modify_request.t -> ...
 ```
 
+- When `Config.address` is set, every request carries an `X-Address` header with it.
+  The simulator takes the acting account from that header; Hyperliquid ignores it.
 - The nonce is the current time in milliseconds, forced strictly increasing within the
   process (`next_nonce`), so two requests in the same millisecond do not collide.
 - `sign` receives the unsigned request body (`{"action", "nonce", "vaultAddress"?}`)

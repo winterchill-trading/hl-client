@@ -84,3 +84,18 @@ let%expect_test "decode responses" =
     (Error (((status 502) (body "Bad Gateway")) "unexpected HTTP status"))
     |}]
 ;;
+
+let%expect_test "X-Address header from the config address" =
+  let base_url = Uri.of_string "http://localhost:3000" in
+  print_s [%sexp (Exchange.headers (Config.create ~base_url ()) : (string * string) list)];
+  [%expect {| () |}];
+  print_s
+    [%sexp
+      (Exchange.headers
+         (Config.create
+            ~address:(Address.of_string "0x00000000000000000000000000000000000000AA")
+            ~base_url
+            ())
+       : (string * string) list)];
+  [%expect {| ((X-Address 0x00000000000000000000000000000000000000aa)) |}]
+;;

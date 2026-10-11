@@ -9,9 +9,8 @@ module Response = struct
   [@@deriving sexp_of]
 end
 
-let headers = Cohttp.Header.of_list [ "Content-Type", "application/json" ]
-
-let post_json uri json =
+let post_json ?(headers = []) uri json =
+  let headers = Cohttp.Header.of_list (("Content-Type", "application/json") :: headers) in
   Monitor.try_with_or_error ~extract_exn:true (fun () ->
     let%bind response, body =
       Cohttp_async.Client.post

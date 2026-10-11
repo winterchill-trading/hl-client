@@ -36,9 +36,18 @@ let decode (response : Http.Response.t) =
     else Http.decode_json response ~f:Exchange_response.t_of_yojson
 ;;
 
+let headers (config : Config.t) =
+  match config.address with
+  | None -> []
+  | Some address -> [ "X-Address", Address.to_string address ]
+;;
+
 let post config ?sign ?vault_address action =
   let request = build_request ?sign ?vault_address ~nonce:(next_nonce ()) action in
-  Http.post_json (Config.exchange_uri config) (Exchange_request.yojson_of_t request)
+  Http.post_json
+    ~headers:(headers config)
+    (Config.exchange_uri config)
+    (Exchange_request.yojson_of_t request)
   >>| Or_error.bind ~f:decode
 ;;
 

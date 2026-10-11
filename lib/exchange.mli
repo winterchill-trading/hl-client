@@ -28,6 +28,11 @@ val build_request
     any HTTP status, since [{"status": "err", ...}] may come with a 4xx. *)
 val decode : Http.Response.t -> Exchange_response.t Or_error.t
 
+(** Extra HTTP headers sent with every request: [X-Address: <Config.address>] when the
+    config has an address. The simulator takes the acting account from this header;
+    Hyperliquid ignores it and uses the signature. *)
+val headers : Config.t -> (string * string) list
+
 val post
   :  Config.t
   -> ?sign:sign
