@@ -1,0 +1,8 @@
+(library
+ (name hl_client_test)
+ (libraries core async hl-client hl-protocol yojson uri)
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (preprocess
+  (pps ppx_jane)))
