@@ -174,6 +174,7 @@ let () =
     ; "mids", mids_command
     ; "watch", watch_command
     ; "feed", feed_command
+    ; "rebuild-norm", Market_data.Rebuild_norm.command [ (module Raw_normalizer) ]
     ; "address", address_command
     ; "cancel", cancel_command
     ]
