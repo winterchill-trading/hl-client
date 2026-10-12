@@ -1,6 +1,14 @@
 (library
  (name hl_client_test)
- (libraries core async async_websocket hl-client hl-protocol yojson uri)
+ (libraries
+  core
+  async
+  async_websocket
+  hl-client
+  hl-protocol
+  market-data
+  yojson
+  uri)
  (inline_tests
   (flags
    (:standard -source-tree-root .)))
