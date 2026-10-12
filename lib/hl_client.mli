@@ -27,3 +27,6 @@ module Ws = Ws
 
 (** Normalized market data ({!Market_data.Feed.t}) from the public websocket. *)
 module Live_feed = Live_feed
+
+(** Keccak-256, for Ethereum-style request signing. *)
+module Keccak = Keccak
