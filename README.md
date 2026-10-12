@@ -243,6 +243,12 @@ module Stats : sig
 end
 
 val create_with_stats : (* same arguments *) -> (Market_data.Feed.t * (unit -> Stats.t)) Deferred.t
+
+type t
+val start          : (* same arguments *) -> t Deferred.t
+val feed           : t -> Market_data.Feed.t
+val feed_with_gaps : t -> Market_data.Feed.With_gaps.t
+val stats          : t -> Stats.t
 ```
 
 A read-only [market-data](https://github.com/winterchill-trading/market-data) feed over
@@ -265,8 +271,12 @@ and dropped; `create_with_stats` counts them, along with server error frames and
 reconnects. Pipes of streams not requested are
 closed; the others are unbounded, so read them all.
 
-The feed has no gap event (`Market_data.Feed.S` defines none); a reconnect shows up only
-in `Stats.reconnects` and as a fresh snapshot and bbo.
+Every reconnect is reported on the `gaps` pipe of `feed_with_gaps` as one
+`Market_data.Gap.t` with reason `Resync`, venue `Hyperliquid` and no instrument or stream
+(the break covers the whole connection). Its `recv_ts` is when the new connection came up,
+and it is written before the resubscriptions go out, so it precedes the fresh snapshot
+and bbo. It is also counted in `Stats.reconnects`. The `gaps` pipe is written without
+pushback and closes with the feed, so it can be left unread.
 
 ### `Normalizer` and `Raw_normalizer`
 
