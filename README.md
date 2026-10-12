@@ -265,6 +265,28 @@ and dropped; `create_with_stats` counts them, along with server error frames and
 reconnects. Pipes of streams not requested are
 closed; the others are unbounded, so read them all.
 
+The feed has no gap event (`Market_data.Feed.S` defines none); a reconnect shows up only
+in `Stats.reconnects` and as a fresh snapshot and bbo.
+
+### `Normalizer` and `Raw_normalizer`
+
+```ocaml
+(* Normalizer *)
+type t
+val create : ?streams:Market_data.Stream.t list -> unit -> t   (* default all four *)
+val frame : t -> recv_ts:Time_ns.t -> string -> Market_data.Event.t list Or_error.t
+val reset : t -> unit
+
+(* Raw_normalizer *)
+include Market_data.Normalizer.S with type t = Normalizer.t
+```
+
+`Normalizer` is the pure frame-to-events code that `Live_feed` runs on every frame,
+including the top-of-book de-duplication of `Bbo`; `Live_feed` resets it on every
+(re)connection. `Raw_normalizer` adapts it to `Market_data.Normalizer.S` (all streams;
+`disconnect` resets), which is what `Market_data.Rebuild_norm` needs to rebuild `norm/`
+event logs from market-recorder raw minute files.
+
 ## CLI
 
 `hl-cli` (`bin/hl_cli.ml`) is a smoke-testing tool:
@@ -276,6 +298,7 @@ hl-cli watch -l2book BTC -trades BTC -all-mids      # prints every websocket mes
 hl-cli watch -order-updates 0x... -user-fills 0x... -ws-url ws://localhost:3000/ws -debug
 hl-cli feed -symbol BTC -streams trades,bbo         # normalized market-data events
 hl-cli feed -base-url https://api.hyperliquid.xyz -symbol BTC -streams trades,bbo,l2,funding -raw
+hl-cli rebuild-norm -data-dir /data -date 2026-10-12 -out /tmp/norm  # raw minutes -> event logs
 HL_PRIVATE_KEY=0x... hl-cli address                 # account address of the key
 HL_PRIVATE_KEY=0x... hl-cli cancel -base-url https://api.hyperliquid-testnet.xyz -asset 0 -oid 1
 ```
@@ -309,7 +332,8 @@ dune exec hl-cli -- feed -symbol BTC -streams trades,bbo
 `dune test` runs ppx_expect tests with no network access: request encodings, response
 decoding (including error cases), nonce ordering, Keccak-256 and MessagePack vectors,
 the SDK signing vectors, typed handles, websocket message encoding and decoding,
-`Live_feed` normalization of captured frames, and loopback tests that run a websocket
+`Normalizer` and `Live_feed` normalization of captured frames, `rebuild-norm` over the
+recorded minute, and loopback tests that run a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
 resubscription, ping/pong, silent-connection detection and shutdown. The reconnect tests
 in `test_reconnect_fake_clock.ml` step the backoff on a synthetic `Time_source` (no
@@ -319,7 +343,8 @@ reconnect at 990 ms of a 1 s backoff, one at 1 s) and check the `Live_feed` stat
 recorded from mainnet by market-recorder, in its raw layout (`<recv_ts> <frame>` per
 line, one file per stream: 25 trades
 frames, 6 `l2Book`, 12 `activeAssetCtx`). Every frame decodes; normalized, they give 40
-trades, 6 L2 snapshots, 6 bbo and 12 funding events. The handshake (RFC 6455 vectors),
+trades, 6 L2 snapshots, 6 bbo and 12 funding events, and `rebuild-norm` writes the same
+64 events into four event logs. The handshake (RFC 6455 vectors),
 backoff and keepalive variants are tested in venue-net.
 
 ## macOS and OpenSSL
