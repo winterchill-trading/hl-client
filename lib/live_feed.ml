@@ -53,6 +53,8 @@ let streams_of_channel ~streams channel =
   List.filter candidates ~f:(wants streams)
 ;;
 
+(* An l2Book frame feeds both L2 and Bbo; it is recorded once, under the first. *)
+let raw_stream ~streams channel = List.hd (streams_of_channel ~streams channel)
 let instrument coin = Md.Instrument.create Hyperliquid (Coin.to_string coin)
 let time_of_ms ms = Time_ns.of_int_ns_since_epoch (ms * 1_000_000)
 
@@ -181,8 +183,27 @@ module Pipes = struct
   ;;
 end
 
-let create
+module Stats = struct
+  type t =
+    { frames : int
+    ; parse_errors : int
+    ; error_frames : int
+    ; reconnects : int
+    }
+  [@@deriving sexp_of]
+end
+
+module Counters = struct
+  type t =
+    { mutable frames : int
+    ; mutable parse_errors : int
+    ; mutable error_frames : int
+    }
+end
+
+let create_with_stats
   ?(on_raw = fun ~stream:_ ~recv_ts:_ _ -> ())
+  ?time_source
   (config : Config.t)
   ~symbols
   ~streams
@@ -197,6 +218,7 @@ let create
       ~max_silent_intervals:1
       ~on_connect
       ~log_name:"hl-client live feed"
+      ?time_source
       ~url:config.ws_url
       ()
     >>| ok_exn
@@ -211,22 +233,38 @@ let create
   if not (wants streams L2) then Pipe.close l2;
   if not (wants streams Funding) then Pipe.close funding;
   let last_bbo = Md.Instrument.Table.create () in
+  let counters = { Counters.frames = 0; parse_errors = 0; error_frames = 0 } in
+  let now () =
+    match time_source with
+    | None -> Time_ns.now ()
+    | Some time_source -> Time_source.now time_source
+  in
   let on_frame frame =
-    let recv_ts = Time_ns.now () in
+    let recv_ts = now () in
     match channel frame with
     | Some "error" ->
+      counters.error_frames <- counters.error_frames + 1;
       Log.Global.error_s [%message "hl-client live feed: error frame" (frame : string)]
     | channel ->
-      (match streams_of_channel ~streams (Option.value channel ~default:"") with
-       | [] -> ()
-       | feeds ->
-         List.iter feeds ~f:(fun stream -> on_raw ~stream ~recv_ts frame);
+      (match raw_stream ~streams (Option.value channel ~default:"") with
+       | None -> ()
+       | Some stream ->
+         counters.frames <- counters.frames + 1;
+         on_raw ~stream ~recv_ts frame;
          (match normalize ~streams ~recv_ts frame with
           | Ok events -> List.iter events ~f:(Pipes.write pipes ~last_bbo)
           | Error error ->
+            counters.parse_errors <- counters.parse_errors + 1;
             Log.Global.error_s
               [%message
                 "hl-client live feed: unparsable frame" (frame : string) (error : Error.t)]))
+  in
+  let stats () =
+    { Stats.frames = counters.frames
+    ; parse_errors = counters.parse_errors
+    ; error_frames = counters.error_frames
+    ; reconnects = Ws_client.reconnects client
+    }
   in
   don't_wait_for
     (let%map () = Pipe.iter_without_pushback (Ws_client.messages client) ~f:on_frame in
@@ -243,12 +281,17 @@ let create
     ;;
   end
   in
-  (module Feed : Md.Feed.S)
+  (module Feed : Md.Feed.S), stats
+;;
+
+let create ?on_raw ?time_source config ~symbols ~streams =
+  create_with_stats ?on_raw ?time_source config ~symbols ~streams >>| fst
 ;;
 
 module For_testing = struct
   let subscribe_requests = subscribe_requests
   let channel = channel
   let streams_of_channel = streams_of_channel
+  let raw_stream = raw_stream
   let normalize = normalize
 end

@@ -15,8 +15,8 @@
       [next_funding_time] is the next full hour (Hyperliquid funds hourly). The simulator
       does not serve this channel.
 
-    [recv_ts] is [Time_ns.now ()] when the frame is read. Instruments are
-    [Instrument.create Hyperliquid symbol].
+    [recv_ts] is the time ([Time_ns.now ()], or [time_source]) when the frame is read.
+    Instruments are [Instrument.create Hyperliquid symbol].
 
     The connection is a {!Venue_net.Ws_client}: on disconnect it reconnects with
     exponential backoff and resubscribes. Frames that fail to parse are logged and
@@ -29,16 +29,40 @@ open! Async
 (** [create config ~symbols ~streams] connects to [config.ws_url] and subscribes. Raises
     if the first connection fails.
 
-    [on_raw] sees every data frame of a subscribed stream exactly as received, before it
-    is parsed. An [l2Book] frame feeding both [L2] and [Bbo] is passed once per stream.
-    Subscription acks, pongs and error frames are not passed. [Private] in [streams] is
-    ignored. *)
+    [on_raw] sees every data frame of a subscribed stream exactly once, as received and
+    before it is parsed. An [l2Book] frame feeds both [L2] and [Bbo] but is passed once,
+    under [L2] when [L2] is requested and under [Bbo] otherwise, so a recorder writes each
+    frame once. Subscription acks, pongs and error frames are not passed. [Private] in
+    [streams] is ignored.
+
+    [time_source] (default the wall clock) stamps [recv_ts] and drives the keepalive,
+    silence watchdog and reconnection delays of the underlying [Venue_net.Ws_client]. *)
 val create
   :  ?on_raw:(stream:Market_data.Stream.t -> recv_ts:Time_ns.t -> string -> unit)
+  -> ?time_source:Time_source.t
   -> Config.t
   -> symbols:string list
   -> streams:Market_data.Stream.t list
   -> Market_data.Feed.t Deferred.t
+
+module Stats : sig
+  type t =
+    { frames : int (** data frames of subscribed streams, as passed to [on_raw] *)
+    ; parse_errors : int (** of those, frames that failed to parse and were dropped *)
+    ; error_frames : int (** [{"channel": "error"}] frames from the server *)
+    ; reconnects : int (** successful reconnections (the first connection excluded) *)
+    }
+  [@@deriving sexp_of]
+end
+
+(** [create], also returning a function that reads the current counters. *)
+val create_with_stats
+  :  ?on_raw:(stream:Market_data.Stream.t -> recv_ts:Time_ns.t -> string -> unit)
+  -> ?time_source:Time_source.t
+  -> Config.t
+  -> symbols:string list
+  -> streams:Market_data.Stream.t list
+  -> (Market_data.Feed.t * (unit -> Stats.t)) Deferred.t
 
 (** Pure pieces, exposed for testing. *)
 module For_testing : sig
@@ -56,6 +80,12 @@ module For_testing : sig
     :  streams:Market_data.Stream.t list
     -> string
     -> Market_data.Stream.t list
+
+  (** The stream a frame of this channel is recorded under by [on_raw], if any. *)
+  val raw_stream
+    :  streams:Market_data.Stream.t list
+    -> string
+    -> Market_data.Stream.t option
 
   (** Normalized events of one frame for the requested streams. Frames of other channels
       give [Ok []]. *)
