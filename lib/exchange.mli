@@ -1,8 +1,8 @@
 (** The [POST /exchange] endpoint.
 
-    Signing is out of scope: requests carry an optional opaque [signature] produced by the
-    [?sign] hook. The simulator accepts unsigned requests; the real Hyperliquid API
-    rejects them. *)
+    Requests carry an optional opaque [signature] produced by the [?sign] hook;
+    {!Signing.sign_request} is the hook for the real exchange, and {!Client} passes it for
+    you. The simulator accepts unsigned requests; the real Hyperliquid API rejects them. *)
 
 open! Core
 open Async

@@ -19,7 +19,7 @@ module Http = Http
 (** [POST /info]: books, mids, open orders, fills, positions, metadata. *)
 module Info = Info
 
-(** [POST /exchange]: place, cancel and modify orders. Signing is delegated to a hook. *)
+(** [POST /exchange]: place, cancel and modify orders, signed through a hook. *)
 module Exchange = Exchange
 
 (** Websocket subscriptions with ping, reconnect and resubscription. *)
