@@ -33,3 +33,6 @@ module Keccak = Keccak
 
 (** MessagePack encoding of actions, hashed when signing. *)
 module Msgpack = Msgpack
+
+(** EIP-712 signing of exchange actions with a secp256k1 key. *)
+module Signing = Signing
