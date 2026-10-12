@@ -6,6 +6,7 @@
   async_websocket
   hl-client
   hl-protocol
+  ppx_yojson_conv_lib
   market-data
   yojson
   uri)
