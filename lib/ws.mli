@@ -6,7 +6,9 @@
     a single pipe.
 
     Both [ws://] (simulator) and [wss://] (real Hyperliquid, via OpenSSL with SNI) URLs
-    are supported. *)
+    are supported. The transport (handshake, keepalive, watchdog, reconnect) is
+    [Venue_net.Ws_client]; this module adds the typed messages and subscription
+    bookkeeping. *)
 
 open! Core
 open Async
@@ -54,28 +56,9 @@ val close : t -> unit Deferred.t
 (** Send an arbitrary request on the current connection; dropped if disconnected. *)
 val send : t -> Ws_request.t -> unit Deferred.t
 
-(** Pure pieces, exposed for testing. *)
+(** Pure pieces, exposed for testing. The handshake, backoff and keepalive live in
+    [Venue_net.Ws_client] and are tested there. *)
 module For_testing : sig
-  val base64 : string -> string
-
-  (** The HTTP upgrade request for [uri] with the given [Sec-WebSocket-Key]. *)
-  val handshake_request : Uri.t -> key:string -> string
-
-  (** Check a [101 Switching Protocols] response against [key]. Header names are
-      case-insensitive. *)
-  val check_handshake_response
-    :  key:string
-    -> status_line:string
-    -> headers:(string * string) list
-    -> unit Or_error.t
-
   val decode : string -> Ws_message.t Or_error.t
   val encode : Ws_request.t -> string
-
-  (** Successive reconnection delays. *)
-  val backoff
-    :  initial:Time_float.Span.t
-    -> max:Time_float.Span.t
-    -> attempts:int
-    -> Time_float.Span.t list
 end
