@@ -75,20 +75,24 @@ module Server = struct
   ;;
 end
 
+(* Waits for [values_available] rather than racing [Pipe.read] against the timeout: a
+   timed out [Pipe.read] stays queued on the pipe and would swallow the next message. *)
 let read_and_print messages n =
   Deferred.repeat_until_finished n (fun n ->
     if n = 0
     then return (`Finished ())
     else (
-      match%map Clock.with_timeout (sec 5.) (Pipe.read messages) with
+      match%map Clock.with_timeout (sec 5.) (Pipe.values_available messages) with
       | `Timeout ->
         print_endline "timeout";
         `Finished ()
       | `Result `Eof ->
         print_endline "eof";
         `Finished ()
-      | `Result (`Ok message) ->
-        print_s [%sexp (message : Ws_message.t)];
+      | `Result `Ok ->
+        (match Pipe.read_now messages with
+         | `Ok message -> print_s [%sexp (message : Ws_message.t)]
+         | `Eof | `Nothing_available -> ());
         `Repeat (n - 1)))
 ;;
 
