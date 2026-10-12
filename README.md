@@ -380,7 +380,8 @@ recorded minute, and loopback tests that run a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
 resubscription, ping/pong, silent-connection detection and shutdown. The reconnect tests
 in `test_reconnect_fake_clock.ml` step the backoff on a synthetic `Time_source` (no
-reconnect at 990 ms of a 1 s backoff, one at 1 s) and check the `Live_feed` stats.
+reconnect at 990 ms of a 1 s backoff, one at 1 s), check the `Live_feed` stats and
+that each reconnect emits one `Resync` gap before the fresh snapshot.
 
 `test/fixtures/raw/hyperliquid/<stream>/BTC/2026/10/12/13-35.ndjson` is a trimmed minute
 recorded from mainnet by market-recorder, in its raw layout (`<recv_ts> <frame>` per
