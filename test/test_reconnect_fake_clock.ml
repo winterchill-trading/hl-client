@@ -141,6 +141,7 @@ let%expect_test "Live_feed stats count parse errors, error frames and reconnects
   let%bind () = Feed.close () in
   let%bind l2 = Pipe.to_list Feed.l2 in
   let%bind bbo = Pipe.to_list Feed.bbo in
+  (* The second connection's book has the same top, but each connection starts afresh. *)
   print_s [%message "" ~l2:(List.length l2 : int) ~bbo:(List.length bbo : int)];
   [%expect
     {|
@@ -148,7 +149,7 @@ let%expect_test "Live_feed stats count parse errors, error frames and reconnects
     (sleep_within_400_600ms true)
     ((frames 3) (parse_errors 1) (error_frames 1) (reconnects 1))
     ((L2 0) (L2 0) (L2 1000))
-    ((l2 2) (bbo 1))
+    ((l2 2) (bbo 2))
     |}];
   Server.close server
 ;;

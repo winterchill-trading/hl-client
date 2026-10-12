@@ -85,7 +85,11 @@ let create_with_stats
   ~streams
   =
   let requests = subscribe_requests ~symbols ~streams in
+  let normalizer = Normalizer.create ~streams () in
+  (* Every connection starts from a fresh top of book, as [Raw_normalizer.disconnect] does
+     when a recording is rebuilt. *)
   let on_connect client =
+    Normalizer.reset normalizer;
     Deferred.all_unit (List.map requests ~f:(Ws_client.send client))
   in
   let%map client =
@@ -108,7 +112,6 @@ let create_with_stats
   if not (wants streams Bbo) then Pipe.close bbo;
   if not (wants streams L2) then Pipe.close l2;
   if not (wants streams Funding) then Pipe.close funding;
-  let normalizer = Normalizer.create ~streams () in
   let counters = { Counters.frames = 0; parse_errors = 0; error_frames = 0 } in
   let now () =
     match time_source with
