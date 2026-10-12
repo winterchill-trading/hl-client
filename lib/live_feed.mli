@@ -9,14 +9,18 @@
     - [L2]: the [l2Book] channel. Every [l2Book] message is a full book, so each one
       becomes a [Snapshot]; after a reconnect the resubscription brings a fresh snapshot.
     - [Bbo]: the top of the same [l2Book] messages (emitted when both sides are non-empty
-      and the top changed; [normalize] below does not filter).
+      and the top changed since the last one of the connection; [normalize] below does not
+      filter).
     - [Funding]: the [activeAssetCtx] channel (current [funding], [markPx], [oraclePx] as
       the index). The message has no timestamp, so [exch_ts] is the receive time, and
       [next_funding_time] is the next full hour (Hyperliquid funds hourly). The simulator
       does not serve this channel.
 
     [recv_ts] is the time ([Time_ns.now ()], or [time_source]) when the frame is read.
-    Instruments are [Instrument.create Hyperliquid symbol].
+    Instruments are [Instrument.create Hyperliquid symbol]. Frames are turned into events
+    by a {!Normalizer}, reset on every (re)connection. There is no gap event:
+    {!Market_data.Feed.S} has none, so a reconnect is visible only in {!Stats} and as the
+    fresh snapshot and bbo.
 
     The connection is a {!Venue_net.Ws_client}: on disconnect it reconnects with
     exponential backoff and resubscribes. Frames that fail to parse are logged and
@@ -87,8 +91,8 @@ module For_testing : sig
     -> string
     -> Market_data.Stream.t option
 
-  (** Normalized events of one frame for the requested streams. Frames of other channels
-      give [Ok []]. *)
+  (** Normalized events of one frame for the requested streams, by a fresh {!Normalizer}.
+      Frames of other channels give [Ok []]. *)
   val normalize
     :  streams:Market_data.Stream.t list
     -> recv_ts:Time_ns.t
