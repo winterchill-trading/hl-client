@@ -153,6 +153,32 @@ val close : t -> unit Deferred.t
   this module adds the typed messages and the subscription set. `Http` likewise wraps
   `Venue_net.Http`.
 
+### `Live_feed` (normalized market data)
+
+```ocaml
+val create
+  :  ?on_raw:(stream:Market_data.Stream.t -> recv_ts:Time_ns.t -> string -> unit)
+  -> Config.t -> symbols:string list -> streams:Market_data.Stream.t list
+  -> Market_data.Feed.t Deferred.t
+```
+
+A read-only [market-data](https://github.com/winterchill-trading/market-data) feed over
+the public websocket, for the simulator and the real Hyperliquid API. Symbols are coins
+(`BTC`); instruments are `hyperliquid:<coin>`.
+
+| Stream    | Channel          | Notes                                                        |
+|-----------|------------------|--------------------------------------------------------------|
+| `Trades`  | `trades`         | `exch_ts` = `time`, `trade_id` = `tid`, side = aggressor     |
+| `L2`      | `l2Book`         | every message is a full book, so always a `Snapshot`         |
+| `Bbo`     | `l2Book`         | top of book, emitted when it changes                         |
+| `Funding` | `activeAssetCtx` | `funding`, `markPx`, `oraclePx` (index); no venue timestamp, so `exch_ts` = `recv_ts`; next funding on the hour. Not served by the simulator |
+
+`recv_ts` is taken when the frame is read, and `on_raw` sees the frame text before it is
+parsed (an `l2Book` frame feeding both `L2` and `Bbo` is passed once per stream).
+Reconnects use `Venue_net.Ws_client` backoff and resubscribe, which brings a fresh book
+snapshot. Unparsable frames are logged and dropped. Pipes of streams not requested are
+closed; the others are unbounded, so read them all.
+
 ## CLI
 
 `hl-cli` (`bin/hl_cli.ml`) is a smoke-testing tool:
@@ -162,13 +188,36 @@ hl-cli l2book BTC                                   # simulator on localhost:300
 hl-cli mids -base-url https://api.hyperliquid.xyz
 hl-cli watch -l2book BTC -trades BTC -all-mids      # prints every websocket message
 hl-cli watch -order-updates 0x... -user-fills 0x... -ws-url ws://localhost:3000/ws -debug
+hl-cli feed -symbol BTC -streams trades,bbo         # normalized market-data events
+hl-cli feed -base-url https://api.hyperliquid.xyz -symbol BTC -streams trades,bbo,l2,funding -raw
+```
+
+`feed` prints `Market_data.Event.t` sexps on stdout (`-raw` also prints each frame on
+stderr). Checked against the simulator with
+
+```sh
+(cd ../hl-sim && dune exec hl-sim -- -port 3000) &
+dune exec hl-cli -- feed -symbol BTC -streams trades,bbo
+```
+
+```
+(Bbo
+ ((instrument ((venue Hyperliquid) (symbol BTC)))
+  (exch_ts (2026-10-12 12:16:07.633000000+01:00))
+  (recv_ts (2026-10-12 12:16:07.662333000+01:00)) (bid_price 100007)
+  (bid_size 0.01341) (ask_price 100062) (ask_size 0.01492)))
+(Trade
+ ((instrument ((venue Hyperliquid) (symbol BTC)))
+  (exch_ts (2026-10-12 12:16:07.844000000+01:00))
+  (recv_ts (2026-10-12 12:16:07.844605000+01:00)) (price 100007)
+  (size 0.01196) (side Sell) (trade_id 14)))
 ```
 
 ## Tests
 
 `dune test` runs ppx_expect tests with no network access: request encodings, response
 decoding (including error cases), nonce ordering, websocket message encoding and
-decoding, and a loopback test that runs a websocket
+decoding, `Live_feed` normalization of captured frames, and a loopback test that runs a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
 resubscription, ping/pong, silent-connection detection and shutdown. The handshake
 (RFC 6455 vectors), backoff and keepalive variants are tested in venue-net.
