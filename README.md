@@ -14,6 +14,7 @@ unless you pass a `~sign` hook.
 ```sh
 opam switch create 5.2.0+ox --repos ox=git+https://github.com/oxcaml/opam-repository.git,default
 opam pin add -y -n fixed-decimal https://github.com/winterchill-trading/fixed-decimal.git
+opam pin add -y -n exchange-core https://github.com/winterchill-trading/exchange-core.git
 opam pin add -y -n hl-protocol https://github.com/winterchill-trading/hl-protocol.git
 opam install . --deps-only --with-test
 dune build && dune test
