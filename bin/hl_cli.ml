@@ -1,7 +1,10 @@
 (* Command-line smoke tests for hl-client, e.g. against the simulator:
 
    hl-cli l2book BTC hl-cli mids -base-url https://api.hyperliquid.xyz hl-cli watch
-   -l2book BTC -trades BTC -all-mids hl-cli feed -symbol BTC -streams trades,bbo *)
+   -l2book BTC -trades BTC -all-mids hl-cli feed -symbol BTC -streams trades,bbo
+
+   HL_PRIVATE_KEY=0x... hl-cli cancel -base-url https://api.hyperliquid-testnet.xyz -asset
+   0 -oid 1 *)
 
 open! Core
 open Async
@@ -126,6 +129,44 @@ let feed_command =
          print_s [%sexp (event : Market_data.Event.t)]))
 ;;
 
+let address_command =
+  Command.basic
+    ~summary:"Print the account address of the key in HL_PRIVATE_KEY"
+    (let%map_open.Command () = return () in
+     fun () ->
+       match Signing.Private_key.of_env () with
+       | Ok key -> Core.print_s [%sexp (Signing.Private_key.address key : Address.t)]
+       | Error error ->
+         Core.eprint_s [%sexp (error : Error.t)];
+         Stdlib.exit 1)
+;;
+
+let cancel_command =
+  Command.async
+    ~summary:
+      "Cancel one order by id, signed with HL_PRIVATE_KEY (refuses mainnet unless \
+       -allow-mainnet)"
+    (let%map_open.Command config = config_param
+     and asset = flag "asset" (required int) ~doc:"N asset index"
+     and oid = flag "oid" (required int) ~doc:"N order id"
+     and allow_mainnet = flag "allow-mainnet" no_arg ~doc:" permit api.hyperliquid.xyz" in
+     fun () ->
+       match Client.trading_of_env config with
+       | Error error ->
+         Print.eprint_s [%sexp (error : Error.t)];
+         exit 1
+       | Ok client ->
+         if Client.is_mainnet client && not allow_mainnet
+         then (
+           Print.eprintf "refusing to sign for mainnet without -allow-mainnet\n";
+           exit 2)
+         else
+           Client.cancel
+             client
+             [ { asset = Asset.of_int asset; oid = Order_id.of_int oid } ]
+           >>= print_result [%sexp_of: Exchange_response.t])
+;;
+
 let () =
   Command.group
     ~summary:"Hyperliquid API client"
@@ -133,6 +174,8 @@ let () =
     ; "mids", mids_command
     ; "watch", watch_command
     ; "feed", feed_command
+    ; "address", address_command
+    ; "cancel", cancel_command
     ]
   |> Command_unix.run
 ;;
