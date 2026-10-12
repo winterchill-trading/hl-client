@@ -180,3 +180,28 @@ let%expect_test "unwanted, control and malformed frames" =
       ("Of_yojson_error (Failure(\"hl-protocol/lib/trade.ml.t_of_yojson: the following record elements were undefined: side px sz hash time tid users\"), {\"coin\":\"BTC\"})")))
     |}]
 ;;
+
+let%expect_test "Raw_normalizer: a disconnect re-emits the unchanged top" =
+  let (module N : Md.Normalizer.S) = (module Raw_normalizer) in
+  let n = N.create () in
+  let book = List.hd_exn (frames L2) in
+  let emitted () =
+    let recv_ts, frame = book in
+    N.frame n ~recv_ts frame
+    |> ok_exn
+    |> List.map ~f:Md.Event.stream
+    |> [%sexp_of: Md.Stream.t list]
+    |> print_s
+  in
+  print_s [%sexp (N.venue : Md.Venue.t)];
+  emitted ();
+  emitted ();
+  N.disconnect n;
+  emitted ();
+  [%expect {|
+    Hyperliquid
+    (L2 Bbo)
+    (L2)
+    (L2 Bbo)
+    |}]
+;;

@@ -4,6 +4,7 @@ module Info = Info
 module Exchange = Exchange
 module Ws = Ws
 module Normalizer = Normalizer
+module Raw_normalizer = Raw_normalizer
 module Live_feed = Live_feed
 module Keccak = Keccak
 module Msgpack = Msgpack
