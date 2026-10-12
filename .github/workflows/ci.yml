@@ -17,6 +17,7 @@ jobs:
       - run: opam pin add -y -n fixed-decimal https://github.com/winterchill-trading/fixed-decimal.git
       - run: opam pin add -y -n exchange-core https://github.com/winterchill-trading/exchange-core.git
       - run: opam pin add -y -n hl-protocol https://github.com/winterchill-trading/hl-protocol.git
+      - run: opam pin add -y -n venue-net https://github.com/winterchill-trading/venue-net.git
       - run: opam install . --deps-only --with-test
       - run: opam exec -- dune build
       - run: opam exec -- dune test
