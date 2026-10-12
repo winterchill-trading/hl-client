@@ -34,6 +34,10 @@ as a depext). Keccak-256 and the MessagePack encoder are pure OCaml in this repo
 `openssl@4` linked into `/opt/homebrew/lib`, build `async_ssl` against `openssl@3` and
 make sure it links by absolute path (see "macOS and OpenSSL" below).
 
+CI installs the pinned siblings and the opam dependencies through the shared
+[ox-setup](https://github.com/winterchill-trading/infra/blob/main/docs/ci.md) action, which
+caches the built opam switch between runs.
+
 ## Quick start
 
 ```ocaml
