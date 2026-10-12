@@ -36,3 +36,6 @@ module Msgpack = Msgpack
 
 (** EIP-712 signing of exchange actions with a secp256k1 key. *)
 module Signing = Signing
+
+(** Typed handles: read-only handles cannot reach [/exchange]. *)
+module Client = Client
