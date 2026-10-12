@@ -1,4 +1,4 @@
-(** Minimal JSON-over-HTTP POST used by [Info] and [Exchange]. *)
+(** JSON-over-HTTP POST used by [Info] and [Exchange], on top of [Venue_net.Http]. *)
 
 open! Core
 open Async

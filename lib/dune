@@ -5,6 +5,7 @@
   core
   async
   hl-protocol
+  venue-net
   yojson
   uri
   cohttp
