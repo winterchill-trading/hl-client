@@ -27,6 +27,7 @@
   hl-protocol
   market-data
   venue-net
+  secp256k1
   ppx_jane
   ppx_yojson_conv
   yojson
