@@ -36,6 +36,10 @@ val trading : ?key:Signing.Private_key.t -> ?is_mainnet:bool -> Config.t -> trad
 val trading_of_env : ?var:string -> ?is_mainnet:bool -> Config.t -> trading t Or_error.t
 
 val config : _ t -> Config.t
+
+(** Whether requests are signed for mainnet (source ["a"]) rather than testnet. *)
+val is_mainnet : _ t -> bool
+
 val to_read_only : _ t -> read_only t
 
 (** The [?sign] hook used for exchange requests, if the handle has a key. *)

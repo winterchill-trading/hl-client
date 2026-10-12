@@ -45,6 +45,7 @@ let trading_of_env ?var ?is_mainnet config =
 ;;
 
 let config t = t.config
+let is_mainnet t = t.is_mainnet
 let to_read_only t = { t with key = None }
 
 let sign t =
