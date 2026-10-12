@@ -25,6 +25,9 @@ module Exchange = Exchange
 (** Websocket subscriptions with ping, reconnect and resubscription. *)
 module Ws = Ws
 
+(** Websocket frames to normalized market data events, the pure core of {!Live_feed}. *)
+module Normalizer = Normalizer
+
 (** Normalized market data ({!Market_data.Feed.t}) from the public websocket. *)
 module Live_feed = Live_feed
 

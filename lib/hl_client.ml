@@ -3,6 +3,7 @@ module Http = Http
 module Info = Info
 module Exchange = Exchange
 module Ws = Ws
+module Normalizer = Normalizer
 module Live_feed = Live_feed
 module Keccak = Keccak
 module Msgpack = Msgpack
