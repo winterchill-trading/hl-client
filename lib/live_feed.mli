@@ -8,8 +8,8 @@
       [tid].
     - [L2]: the [l2Book] channel. Every [l2Book] message is a full book, so each one
       becomes a [Snapshot]; after a reconnect the resubscription brings a fresh snapshot.
-    - [Bbo]: the top of the same [l2Book] messages (emitted when both sides are
-      non-empty).
+    - [Bbo]: the top of the same [l2Book] messages (emitted when both sides are non-empty
+      and the top changed; [normalize] below does not filter).
     - [Funding]: the [activeAssetCtx] channel (current [funding], [markPx], [oraclePx] as
       the index). The message has no timestamp, so [exch_ts] is the receive time, and
       [next_funding_time] is the next full hour (Hyperliquid funds hourly). The simulator

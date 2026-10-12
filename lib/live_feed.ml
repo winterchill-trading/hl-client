@@ -152,9 +152,23 @@ module Pipes = struct
     ; funding : Md.Funding.t Pipe.Writer.t
     }
 
-  let write t : Md.Event.t -> unit = function
+  (* Every book change moves the l2Book channel, mostly below the top; only a changed top
+     of book is a new bbo. *)
+  let same_top (a : Md.Bbo.t) (b : Md.Bbo.t) =
+    Md.Price.equal a.bid_price b.bid_price
+    && Md.Size.equal a.bid_size b.bid_size
+    && Md.Price.equal a.ask_price b.ask_price
+    && Md.Size.equal a.ask_size b.ask_size
+  ;;
+
+  let write t ~last_bbo : Md.Event.t -> unit = function
     | Trade x -> Pipe.write_without_pushback_if_open t.trades x
-    | Bbo x -> Pipe.write_without_pushback_if_open t.bbo x
+    | Bbo x ->
+      (match Hashtbl.find last_bbo x.instrument with
+       | Some last when same_top last x -> ()
+       | _ ->
+         Hashtbl.set last_bbo ~key:x.instrument ~data:x;
+         Pipe.write_without_pushback_if_open t.bbo x)
     | L2 x -> Pipe.write_without_pushback_if_open t.l2 x
     | Funding x -> Pipe.write_without_pushback_if_open t.funding x
   ;;
@@ -196,6 +210,7 @@ let create
   if not (wants streams Bbo) then Pipe.close bbo;
   if not (wants streams L2) then Pipe.close l2;
   if not (wants streams Funding) then Pipe.close funding;
+  let last_bbo = Md.Instrument.Table.create () in
   let on_frame frame =
     let recv_ts = Time_ns.now () in
     match channel frame with
@@ -207,7 +222,7 @@ let create
        | feeds ->
          List.iter feeds ~f:(fun stream -> on_raw ~stream ~recv_ts frame);
          (match normalize ~streams ~recv_ts frame with
-          | Ok events -> List.iter events ~f:(Pipes.write pipes)
+          | Ok events -> List.iter events ~f:(Pipes.write pipes ~last_bbo)
           | Error error ->
             Log.Global.error_s
               [%message
