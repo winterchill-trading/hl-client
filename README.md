@@ -315,8 +315,9 @@ resubscription, ping/pong, silent-connection detection and shutdown. The reconne
 in `test_reconnect_fake_clock.ml` step the backoff on a synthetic `Time_source` (no
 reconnect at 990 ms of a 1 s backoff, one at 1 s) and check the `Live_feed` stats.
 
-`test/fixtures/hyperliquid-BTC-2026-10-12T13-35/` is a trimmed minute recorded from
-mainnet by market-recorder (`<recv_ts> <frame>` per line, one file per stream: 25 trades
+`test/fixtures/raw/hyperliquid/<stream>/BTC/2026/10/12/13-35.ndjson` is a trimmed minute
+recorded from mainnet by market-recorder, in its raw layout (`<recv_ts> <frame>` per
+line, one file per stream: 25 trades
 frames, 6 `l2Book`, 12 `activeAssetCtx`). Every frame decodes; normalized, they give 40
 trades, 6 L2 snapshots, 6 bbo and 12 funding events. The handshake (RFC 6455 vectors),
 backoff and keepalive variants are tested in venue-net.

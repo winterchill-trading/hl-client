@@ -1,15 +1,19 @@
-(* A trimmed minute of mainnet frames in the market-recorder raw format
-   ([<recv_ts> <frame>] per line, one file per stream), decoded and normalized. *)
+(* A trimmed minute of mainnet frames in the market-recorder raw layout
+   ([raw/<venue>/<stream>/<symbol>/<date>/<HH>-<MM>.ndjson], [<recv_ts> <frame>] per
+   line), decoded and normalized. *)
 
 open! Core
 open Hl_client
 module Md = Market_data
 
-let dir = "fixtures/hyperliquid-BTC-2026-10-12T13-35"
+let dir stream =
+  sprintf "fixtures/raw/hyperliquid/%s/BTC/2026/10/12" (Md.Stream.to_string stream)
+;;
+
 let streams : Md.Stream.t list = [ Trades; Bbo; L2; Funding ]
 
 let lines stream =
-  In_channel.read_lines (dir ^/ Md.Stream.to_string stream ^ ".ndjson")
+  In_channel.read_lines (dir stream ^/ "13-35.ndjson")
   |> List.map ~f:(fun line ->
     let recv_ts, frame = String.lsplit2_exn line ~on:' ' in
     Time_ns.of_string_with_utc_offset recv_ts, frame)
