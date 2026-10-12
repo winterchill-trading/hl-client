@@ -11,6 +11,8 @@
   yojson
   uri)
  (inline_tests
+  (deps
+   (source_tree fixtures))
   (flags
    (:standard -source-tree-root .)))
  (preprocess
