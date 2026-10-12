@@ -278,6 +278,39 @@ and it is written before the resubscriptions go out, so it precedes the fresh sn
 and bbo. It is also counted in `Stats.reconnects`. The `gaps` pipe is written without
 pushback and closes with the feed, so it can be left unread.
 
+#### Reconnect frame loss
+
+Nothing the client has read is dropped: frames of the old connection already in the
+`Venue_net.Ws_client` pipe are still normalized and delivered. What is lost is every frame
+the venue publishes after the last one the old connection delivered and before the
+resubscription on the new connection is acknowledged. That window is
+
+1. detection: immediate when the server closes the socket; when the connection stalls
+   silently, up to one keepalive interval (50 s, `max_silent_intervals` 1), since the
+   watchdog closes the socket after an interval with no incoming frame or pong;
+2. the backoff sleep: 0.5 s with 20% jitter (400 to 600 ms) for the first attempt,
+   doubling per failed attempt up to 30 s;
+3. the TCP and TLS handshake, the websocket upgrade and the subscribe round trip.
+
+Per stream, inside the window:
+
+| Stream    | Lost                                   | Recovered by                                   |
+|-----------|----------------------------------------|------------------------------------------------|
+| `L2`      | intermediate books                     | the first `l2Book` after resubscribe (a full snapshot) |
+| `Bbo`     | top-of-book changes                    | the same snapshot; the dedup state is reset, so the first bbo is always emitted |
+| `Trades`  | every trade printed in the window      | nothing in this client (no backfill)           |
+| `Funding` | intermediate `activeAssetCtx` updates  | the next update                                |
+
+Measured on the synthetic clock in `test_reconnect_fake_clock.ml` (loopback server, socket
+I/O does not advance the clock): the last frame of the first connection is stamped 0 ms,
+the server drops the socket, and the reconnect sleep is 400 to 600 ms (412 ms in one
+run, 414 ms for the following reconnect). Stepping the clock exactly to the end of the
+sleep stamps the `Resync` gap and the fresh snapshot with the same `recv_ts`, so the
+window is the backoff alone. In the stats test, which advances the clock by a whole
+second, the raw frames are stamped 0, 0 and 1000 ms: a 1 s hole between the last frame
+of the first connection and the snapshot of the second. On a real network add the
+handshake and subscribe round trip (item 3) to the backoff.
+
 ### `Normalizer` and `Raw_normalizer`
 
 ```ocaml
