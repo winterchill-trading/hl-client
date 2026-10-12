@@ -1,7 +1,7 @@
 (* Command-line smoke tests for hl-client, e.g. against the simulator:
 
    hl-cli l2book BTC hl-cli mids -base-url https://api.hyperliquid.xyz hl-cli watch
-   -l2book BTC -trades BTC -all-mids *)
+   -l2book BTC -trades BTC -all-mids hl-cli feed -symbol BTC -streams trades,bbo *)
 
 open! Core
 open Async
@@ -93,9 +93,46 @@ let watch_command =
            print_s [%sexp (message : Ws_message.t)])))
 ;;
 
+let feed_command =
+  Command.async
+    ~summary:"Print normalized market data (market-data events) as sexps"
+    (let%map_open.Command config = config_param
+     and symbols =
+       flag "symbol" (one_or_more_as_list string) ~doc:"COIN e.g. BTC (repeatable)"
+     and streams =
+       flag
+         "streams"
+         (optional_with_default
+            Market_data.Stream.[ Trades; Bbo ]
+            (Arg_type.comma_separated (Arg_type.create Market_data.Stream.of_string)))
+         ~doc:"LIST trades,bbo,l2,funding (default trades,bbo)"
+     and raw = flag "raw" no_arg ~doc:" also print raw frames to stderr" in
+     fun () ->
+       let on_raw ~stream ~recv_ts:_ frame =
+         if raw then Print.eprintf "%s %s\n" (Market_data.Stream.to_string stream) frame
+       in
+       let%bind (module Feed : Market_data.Feed.S) =
+         Live_feed.create ~on_raw config ~symbols ~streams
+       in
+       let events =
+         Pipe.interleave
+           [ Pipe.map Feed.trades ~f:(fun x -> Market_data.Event.Trade x)
+           ; Pipe.map Feed.bbo ~f:(fun x -> Market_data.Event.Bbo x)
+           ; Pipe.map Feed.l2 ~f:(fun x -> Market_data.Event.L2 x)
+           ; Pipe.map Feed.funding ~f:(fun x -> Market_data.Event.Funding x)
+           ]
+       in
+       Pipe.iter_without_pushback events ~f:(fun event ->
+         print_s [%sexp (event : Market_data.Event.t)]))
+;;
+
 let () =
   Command.group
     ~summary:"Hyperliquid API client"
-    [ "l2book", l2book_command; "mids", mids_command; "watch", watch_command ]
+    [ "l2book", l2book_command
+    ; "mids", mids_command
+    ; "watch", watch_command
+    ; "feed", feed_command
+    ]
   |> Command_unix.run
 ;;

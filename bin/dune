@@ -2,6 +2,13 @@
  (name hl_cli)
  (public_name hl-cli)
  (package hl-client)
- (libraries core async core_unix.command_unix hl-client hl-protocol uri)
+ (libraries
+  core
+  async
+  core_unix.command_unix
+  hl-client
+  hl-protocol
+  market-data
+  uri)
  (preprocess
   (pps ppx_jane)))
