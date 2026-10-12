@@ -25,6 +25,7 @@
   async
   async_ssl
   hl-protocol
+  market-data
   venue-net
   ppx_jane
   ppx_yojson_conv

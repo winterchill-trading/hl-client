@@ -1,6 +1,6 @@
 (library
  (name hl_client)
  (public_name hl-client)
- (libraries core async hl-protocol venue-net yojson uri)
+ (libraries core async hl-protocol market-data venue-net yojson uri)
  (preprocess
   (pps ppx_jane)))
