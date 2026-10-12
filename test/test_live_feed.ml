@@ -154,3 +154,21 @@ let%expect_test "other channels, unrequested streams and bad frames" =
     <unparsable>
     |}]
 ;;
+
+let%expect_test "raw frames are recorded under one stream" =
+  List.iter
+    [ [ Md.Stream.Bbo; L2 ]; [ Bbo ]; [ L2 ]; [ Trades ] ]
+    ~f:(fun streams ->
+      print_s
+        [%sexp
+          (streams : Md.Stream.t list)
+          , (T.raw_stream ~streams "l2Book" : Md.Stream.t option)
+          , (T.raw_stream ~streams "trades" : Md.Stream.t option)]);
+  [%expect
+    {|
+    ((Bbo L2) (L2) ())
+    ((Bbo) (Bbo) ())
+    ((L2) (L2) ())
+    ((Trades) () (Trades))
+    |}]
+;;
