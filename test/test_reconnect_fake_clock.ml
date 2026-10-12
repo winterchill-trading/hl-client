@@ -153,3 +153,64 @@ let%expect_test "Live_feed stats count parse errors, error frames and reconnects
     |}];
   Server.close server
 ;;
+
+let ms time = Time_ns.to_int_ns_since_epoch time / 1_000_000
+
+(* The venue-net default backoff after a successful connection: 0.5s with 20% jitter. *)
+let within_backoff ms = ms >= 400 && ms <= 600
+
+let%expect_test "Live_feed reports one Resync gap per reconnect, before the new snapshot" =
+  Log.Global.set_output [];
+  let on_subscribe ~connection (_ : Subscription.t) = [ book ~time:connection ] in
+  let%bind server = Server.start ~greeting:[] ~on_subscribe () in
+  let clock = Time_source.create ~now:Time_ns.epoch () in
+  let%bind live =
+    Live_feed.start
+      ~time_source:(Time_source.read_only clock)
+      (Config.create ~base_url:(Server.base_url server) ())
+      ~symbols:[ "BTC" ]
+      ~streams:[ L2 ]
+  in
+  let (module Feed : Market_data.Feed.With_gaps.S) = Live_feed.feed_with_gaps live in
+  let%bind first = Pipe.read_exn Feed.l2 in
+  (* Two reconnections, each stepped exactly to the end of its backoff sleep. *)
+  let reconnect n =
+    let%bind () = Server.drop server (n - 1) in
+    let%bind (_ : int option) = wait_for_reconnect_sleep clock in
+    let at = Option.value_exn (Time_source.next_alarm_fires_at clock) in
+    let%bind () = Time_source.advance_by_alarms clock ~to_:at in
+    let%bind gap = Pipe.read_exn Feed.gaps in
+    let%map snapshot = Pipe.read_exn Feed.l2 in
+    gap, snapshot
+  in
+  let%bind gap1, snapshot1 = reconnect 1 in
+  let%bind gap2, snapshot2 = reconnect 2 in
+  print_s
+    [%message
+      ""
+        ~first_snapshot_ms:(ms first.recv_ts : int)
+        ~venue:(gap1.venue : Market_data.Venue.t)
+        ~instrument:(gap1.instrument : Market_data.Instrument.t option)
+        ~stream:(gap1.stream : Market_data.Stream.t option)
+        ~reason:(gap1.reason : Market_data.Gap.Reason.t)
+        ~same_gap_twice:
+          (Market_data.Gap.equal gap2 { gap1 with recv_ts = gap2.recv_ts } : bool)
+        ~gap1_within_400_600ms:(within_backoff (ms gap1.recv_ts) : bool)
+        ~snapshot1_at_gap:(Time_ns.equal snapshot1.recv_ts gap1.recv_ts : bool)
+        ~gap2_within_400_600ms_of_gap1:
+          (within_backoff (ms gap2.recv_ts - ms gap1.recv_ts) : bool)
+        ~snapshot2_at_gap:(Time_ns.equal snapshot2.recv_ts gap2.recv_ts : bool)
+        ~reconnects:((Live_feed.stats live).reconnects : int)];
+  let%bind () = Feed.close () in
+  let%bind rest = Pipe.to_list Feed.gaps in
+  print_s [%message "after close" ~gaps:(List.length rest : int)];
+  [%expect
+    {|
+    ((first_snapshot_ms 0) (venue Hyperliquid) (instrument ()) (stream ())
+     (reason Resync) (same_gap_twice true) (gap1_within_400_600ms true)
+     (snapshot1_at_gap true) (gap2_within_400_600ms_of_gap1 true)
+     (snapshot2_at_gap true) (reconnects 2))
+    ("after close" (gaps 0))
+    |}];
+  Server.close server
+;;
