@@ -1,16 +1,6 @@
 (library
  (name hl_client)
  (public_name hl-client)
- (libraries
-  core
-  async
-  hl-protocol
-  venue-net
-  yojson
-  uri
-  cohttp
-  cohttp-async
-  conduit-async
-  async_websocket)
+ (libraries core async hl-protocol venue-net yojson uri)
  (preprocess
   (pps ppx_jane)))
