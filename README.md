@@ -3,7 +3,9 @@
 Async client for the Hyperliquid HTTP and websocket API
 
 Built with [OxCaml](https://oxcaml.org) and the Jane Street library stack (Core, Async),
-on top of the wire types in [hl-protocol](https://github.com/winterchill-trading/hl-protocol).
+on top of the wire types in [hl-protocol](https://github.com/winterchill-trading/hl-protocol)
+and the venue-independent transport in
+[venue-net](https://github.com/winterchill-trading/venue-net).
 It targets the local simulator ([hl-sim](https://github.com/winterchill-trading/hl-sim))
 and the real Hyperliquid API. Request signing is out of scope: the read-only parts
 (`Info`, `Ws`) work against Hyperliquid as is, while `Exchange` sends unsigned requests
@@ -16,6 +18,7 @@ opam switch create 5.2.0+ox --repos ox=git+https://github.com/oxcaml/opam-reposi
 opam pin add -y -n fixed-decimal https://github.com/winterchill-trading/fixed-decimal.git
 opam pin add -y -n exchange-core https://github.com/winterchill-trading/exchange-core.git
 opam pin add -y -n hl-protocol https://github.com/winterchill-trading/hl-protocol.git
+opam pin add -y -n venue-net https://github.com/winterchill-trading/venue-net.git
 opam install . --deps-only --with-test
 dune build && dune test
 ```
@@ -144,6 +147,10 @@ val close : t -> unit Deferred.t
 - `subscribe` is idempotent and works while disconnected (the subscription is sent on
   the next connection).
 - `ws://` uses plain TCP; `wss://` uses OpenSSL with SNI set to the URL's host.
+- The transport (handshake, keepalive, watchdog, backoff) is `Venue_net.Ws_client`,
+  configured with a `{"method":"ping"}` text keepalive and a one-interval silence limit;
+  this module adds the typed messages and the subscription set. `Http` likewise wraps
+  `Venue_net.Http`.
 
 ## CLI
 
@@ -159,10 +166,11 @@ hl-cli watch -order-updates 0x... -user-fills 0x... -ws-url ws://localhost:3000/
 ## Tests
 
 `dune test` runs ppx_expect tests with no network access: request encodings, response
-decoding (including error cases), nonce ordering, the websocket handshake (RFC 6455
-example vectors), message decoding, backoff, and a loopback test that runs a websocket
+decoding (including error cases), nonce ordering, websocket message encoding and
+decoding, and a loopback test that runs a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
-resubscription, ping/pong, silent-connection detection and shutdown.
+resubscription, ping/pong, silent-connection detection and shutdown. The handshake
+(RFC 6455 vectors), backoff and keepalive variants are tested in venue-net.
 
 ## macOS and OpenSSL
 
