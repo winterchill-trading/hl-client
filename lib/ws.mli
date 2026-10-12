@@ -24,7 +24,11 @@ type t
       consecutive intervals, the connection is considered dead and is replaced.
     - [initial_backoff] (default 0.5s) and [max_backoff] (default 30s) bound the delay
       between reconnection attempts; the delay doubles after each failure and resets after
-      a successful handshake.
+      a successful handshake. [backoff_jitter] (default 0.2) spreads each delay over
+      [delay * (1 +/- backoff_jitter)].
+    - [time_source] (default the wall clock) drives the keepalive, the silence watchdog,
+      the handshake timeout and the reconnection delays, so tests can step them with a
+      synthetic clock.
     - [on_reconnect] is called after each successful reconnection (not the first
       connection), once subscriptions have been resent. Use it to resynchronise state that
       may have changed while disconnected, e.g. open orders. *)
@@ -32,6 +36,8 @@ val connect
   :  ?ping_interval:Time_float.Span.t
   -> ?initial_backoff:Time_float.Span.t
   -> ?max_backoff:Time_float.Span.t
+  -> ?backoff_jitter:float
+  -> ?time_source:Time_source.t
   -> ?on_reconnect:(unit -> unit)
   -> Config.t
   -> t Or_error.t Deferred.t
@@ -49,6 +55,9 @@ val subscribe : t -> Subscription.t -> unit Deferred.t
 val unsubscribe : t -> Subscription.t -> unit Deferred.t
 val subscriptions : t -> Subscription.t list
 val is_connected : t -> bool
+
+(** Successful reconnections so far (the first connection does not count). *)
+val reconnects : t -> int
 
 (** Close the socket, stop reconnecting and close [messages]. *)
 val close : t -> unit Deferred.t

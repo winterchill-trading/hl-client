@@ -18,6 +18,7 @@ type t =
 let messages t = t.messages
 let subscriptions t = Set.to_list !(t.subscriptions)
 let is_connected t = Ws_client.is_connected t.client
+let reconnects t = Ws_client.reconnects t.client
 let send t request = Ws_client.send t.client (encode request)
 
 let subscribe t subscription =
@@ -56,6 +57,8 @@ let connect
   ?(ping_interval = Time_float.Span.of_sec 50.)
   ?(initial_backoff = Time_float.Span.of_sec 0.5)
   ?(max_backoff = Time_float.Span.of_sec 30.)
+  ?backoff_jitter
+  ?time_source
   ?(on_reconnect = fun () -> ())
   (config : Config.t)
   =
@@ -77,6 +80,8 @@ let connect
       ~max_silent_intervals:1
       ~initial_backoff:(span initial_backoff)
       ~max_backoff:(span max_backoff)
+      ?backoff_jitter
+      ?time_source
       ~on_connect
       ~log_name:"hl-client ws"
       ~url:config.ws_url
