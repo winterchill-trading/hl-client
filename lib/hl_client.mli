@@ -30,3 +30,6 @@ module Live_feed = Live_feed
 
 (** Keccak-256, for Ethereum-style request signing. *)
 module Keccak = Keccak
+
+(** MessagePack encoding of actions, hashed when signing. *)
+module Msgpack = Msgpack
