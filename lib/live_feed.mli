@@ -18,9 +18,11 @@
 
     [recv_ts] is the time ([Time_ns.now ()], or [time_source]) when the frame is read.
     Instruments are [Instrument.create Hyperliquid symbol]. Frames are turned into events
-    by a {!Normalizer}, reset on every (re)connection. There is no gap event:
-    {!Market_data.Feed.S} has none, so a reconnect is visible only in {!Stats} and as the
-    fresh snapshot and bbo.
+    by a {!Normalizer}, reset on every (re)connection. Every reconnection is reported on
+    the [gaps] pipe of {!feed_with_gaps} as one {!Market_data.Gap.t} (reason [Resync],
+    every instrument and stream, [recv_ts] when the new connection is up), written before
+    the resubscriptions go out; it is also counted in {!Stats}. What a reconnection loses
+    is described in the README ("Reconnect frame loss").
 
     The connection is a {!Venue_net.Ws_client}: on disconnect it reconnects with
     exponential backoff and resubscribes. Frames that fail to parse are logged and
@@ -58,6 +60,26 @@ module Stats : sig
     }
   [@@deriving sexp_of]
 end
+
+(** A running feed. *)
+type t
+
+(** [create], returning the handle. *)
+val start
+  :  ?on_raw:(stream:Market_data.Stream.t -> recv_ts:Time_ns.t -> string -> unit)
+  -> ?time_source:Time_source.t
+  -> Config.t
+  -> symbols:string list
+  -> streams:Market_data.Stream.t list
+  -> t Deferred.t
+
+val feed : t -> Market_data.Feed.t
+
+(** The same feed with its [gaps] pipe: one [Resync] gap per reconnection. The pipe is
+    written without pushback and closes with the feed. *)
+val feed_with_gaps : t -> Market_data.Feed.With_gaps.t
+
+val stats : t -> Stats.t
 
 (** [create], also returning a function that reads the current counters. *)
 val create_with_stats

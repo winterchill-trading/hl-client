@@ -77,7 +77,12 @@ module Counters = struct
     }
 end
 
-let create_with_stats
+type t =
+  { feed : Md.Feed.With_gaps.t
+  ; stats : unit -> Stats.t
+  }
+
+let start
   ?(on_raw = fun ~stream:_ ~recv_ts:_ _ -> ())
   ?time_source
   (config : Config.t)
@@ -86,10 +91,28 @@ let create_with_stats
   =
   let requests = subscribe_requests ~symbols ~streams in
   let normalizer = Normalizer.create ~streams () in
+  let gaps_r, gaps_w = Pipe.create () in
+  let now () =
+    match time_source with
+    | None -> Time_ns.now ()
+    | Some time_source -> Time_source.now time_source
+  in
   (* Every connection starts from a fresh top of book, as [Raw_normalizer.disconnect] does
-     when a recording is rebuilt. *)
+     when a recording is rebuilt. A reconnection is reported as one gap for every
+     instrument and stream, written before the resubscriptions go out, so it precedes the
+     fresh snapshots. *)
   let on_connect client =
     Normalizer.reset normalizer;
+    if Ws_client.reconnects client > 0
+    then
+      Pipe.write_without_pushback_if_open
+        gaps_w
+        { Md.Gap.recv_ts = now ()
+        ; venue = Hyperliquid
+        ; instrument = None
+        ; stream = None
+        ; reason = Resync
+        };
     Deferred.all_unit (List.map requests ~f:(Ws_client.send client))
   in
   let%map client =
@@ -113,11 +136,6 @@ let create_with_stats
   if not (wants streams L2) then Pipe.close l2;
   if not (wants streams Funding) then Pipe.close funding;
   let counters = { Counters.frames = 0; parse_errors = 0; error_frames = 0 } in
-  let now () =
-    match time_source with
-    | None -> Time_ns.now ()
-    | Some time_source -> Time_source.now time_source
-  in
   let on_frame frame =
     let recv_ts = now () in
     match channel frame with
@@ -147,24 +165,36 @@ let create_with_stats
   in
   don't_wait_for
     (let%map () = Pipe.iter_without_pushback (Ws_client.messages client) ~f:on_frame in
-     Pipes.close pipes);
+     Pipes.close pipes;
+     Pipe.close gaps_w);
   let module Feed = struct
     let trades = trades_r
     let bbo = bbo_r
     let l2 = l2_r
     let funding = funding_r
+    let gaps = gaps_r
 
     let close () =
       let%map () = Ws_client.close client in
-      Pipes.close pipes
+      Pipes.close pipes;
+      Pipe.close gaps_w
     ;;
   end
   in
-  (module Feed : Md.Feed.S), stats
+  { feed = (module Feed : Md.Feed.With_gaps.S); stats }
+;;
+
+let feed t = Md.Feed.With_gaps.to_feed t.feed
+let feed_with_gaps t = t.feed
+let stats t = t.stats ()
+
+let create_with_stats ?on_raw ?time_source config ~symbols ~streams =
+  let%map t = start ?on_raw ?time_source config ~symbols ~streams in
+  feed t, t.stats
 ;;
 
 let create ?on_raw ?time_source config ~symbols ~streams =
-  create_with_stats ?on_raw ?time_source config ~symbols ~streams >>| fst
+  start ?on_raw ?time_source config ~symbols ~streams >>| feed
 ;;
 
 module For_testing = struct
