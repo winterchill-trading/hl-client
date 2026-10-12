@@ -7,9 +7,9 @@ on top of the wire types in [hl-protocol](https://github.com/winterchill-trading
 and the venue-independent transport in
 [venue-net](https://github.com/winterchill-trading/venue-net).
 It targets the local simulator ([hl-sim](https://github.com/winterchill-trading/hl-sim))
-and the real Hyperliquid API. Request signing is out of scope: the read-only parts
-(`Info`, `Ws`) work against Hyperliquid as is, while `Exchange` sends unsigned requests
-unless you pass a `~sign` hook.
+and the real Hyperliquid API. Exchange requests are signed like the official Python SDK
+does it (EIP-712 over a MessagePack action hash, secp256k1); `Client` handles are typed
+so that a read-only handle cannot reach `/exchange`.
 
 ## Build
 
@@ -24,6 +24,11 @@ opam pin add -y -n venue-net https://github.com/winterchill-trading/venue-net.gi
 opam install . --deps-only --with-test
 dune build && dune test
 ```
+
+Signing uses the `secp256k1` opam binding, which needs the C library
+(`brew install secp256k1`, or `libsecp256k1-dev` on Debian and Ubuntu; opam installs it
+as a depext). Keccak-256 and the MessagePack encoder are pure OCaml in this repo, since
+`digestif` 1.3 does not build on OxCaml.
 
 `https://` and `wss://` need `async_ssl` (OpenSSL 3). On macOS with Homebrew's
 `openssl@4` linked into `/opt/homebrew/lib`, build `async_ssl` against `openssl@3` and
@@ -112,6 +117,69 @@ val modify : ... -> Modify_request.t -> ...
 - Per-order outcomes are in `Exchange_response.Ok (Order statuses)`.
 - `build_request` and `decode` expose the pure steps.
 
+### `Signing`
+
+```ocaml
+module Private_key : sig
+  type t                                         (* sexp shows "<private key>" *)
+  val of_hex : string -> t Or_error.t            (* 64 hex digits, 0x optional *)
+  val of_env : ?var:string -> unit -> t Or_error.t   (* default HL_PRIVATE_KEY *)
+  val address : t -> Address.t
+end
+
+module Signature : sig type t = { r : string; s : string; v : int } end
+
+val action_hash : ?expires_after:int -> vault_address:Address.t option -> nonce:int
+  -> Yojson.Safe.t -> string
+val l1_digest : is_mainnet:bool -> connection_id:string -> string
+val sign_l1_action : ?expires_after:int -> Private_key.t -> is_mainnet:bool
+  -> vault_address:Address.t option -> nonce:int -> Yojson.Safe.t -> Signature.t
+val recover : digest:string -> Signature.t -> Address.t Or_error.t
+val sign_request : Private_key.t -> is_mainnet:bool -> Exchange.sign
+```
+
+L1 actions (order, cancel, cancelByCloid, modify, and any other action JSON) are signed
+as in `hyperliquid/utils/signing.py`:
+
+1. `action_hash` = Keccak-256 of `msgpack(action) ++ nonce (8 bytes, big endian) ++
+   (0x00 | 0x01 ++ vault address) [++ 0x00 ++ expiresAfter (8 bytes)]`. Key order in the
+   action JSON is hashed as given; the `Hl_protocol` encoders emit the exchange's order
+   (`type` first, orders as `a b p s r t c`).
+2. The phantom agent `{source: "a" | "b", connectionId: action_hash}` (mainnet | testnet)
+   is hashed as EIP-712 typed data in the domain `Exchange`, version `1`, chain id 1337,
+   verifying contract `0x0`.
+3. The digest is signed with secp256k1 (RFC 6979, low s); `v` is `27 + recovery id`, and
+   `r`, `s` are hex without leading zeros, as the SDK sends them.
+
+The tests reproduce every L1 vector of the SDK's `tests/signing_test.py` (orders with and
+without cloid, trigger orders, vault, `createSubAccount`, `scheduleCancel`, and the
+production phantom-agent hash). A live check against testnet with a freshly generated
+key gave `User or API Wallet 0x04c6...dab5 does not exist.`, i.e. the exchange recovered
+the address the key derives, so the signature is accepted as that account's. User-signed
+actions (transfers, withdrawals) are not implemented.
+
+### `Client` (typed handles)
+
+```ocaml
+type read_only
+type trading
+type 'access t
+
+val read_only : Config.t -> read_only t
+val trading : ?key:Signing.Private_key.t -> ?is_mainnet:bool -> Config.t -> trading t
+val trading_of_env : ?var:string -> ?is_mainnet:bool -> Config.t -> trading t Or_error.t
+val to_read_only : _ t -> read_only t
+
+val l2_book : ... -> _ t -> ...          (* every Info helper, any handle *)
+val place_orders : ... -> trading t -> ...   (* post, cancel, cancel_by_cloid, modify *)
+```
+
+`Client.cancel (Client.read_only config) [...]` is a type error. A trading handle with a
+key signs every request (the key's address becomes the default `user` when the config has
+none); without a key it sends unsigned requests, which is what the simulator wants.
+`is_mainnet` defaults to whether the host is `api.hyperliquid.xyz`. The untyped `Info`
+and `Exchange` functions over a bare `Config.t` stay as they were.
+
 ### `Ws` (websocket)
 
 ```ocaml
@@ -119,6 +187,8 @@ val connect
   :  ?ping_interval:Time_float.Span.t     (* default 50s *)
   -> ?initial_backoff:Time_float.Span.t   (* default 0.5s *)
   -> ?max_backoff:Time_float.Span.t       (* default 30s *)
+  -> ?backoff_jitter:float                (* default 0.2 *)
+  -> ?time_source:Time_source.t           (* default the wall clock *)
   -> ?on_reconnect:(unit -> unit)
   -> Config.t
   -> t Or_error.t Deferred.t
@@ -129,6 +199,7 @@ val unsubscribe : t -> Subscription.t -> unit Deferred.t
 val subscriptions : t -> Subscription.t list
 val send : t -> Ws_request.t -> unit Deferred.t
 val is_connected : t -> bool
+val reconnects : t -> int
 val close : t -> unit Deferred.t
 ```
 
@@ -159,8 +230,15 @@ val close : t -> unit Deferred.t
 ```ocaml
 val create
   :  ?on_raw:(stream:Market_data.Stream.t -> recv_ts:Time_ns.t -> string -> unit)
+  -> ?time_source:Time_source.t
   -> Config.t -> symbols:string list -> streams:Market_data.Stream.t list
   -> Market_data.Feed.t Deferred.t
+
+module Stats : sig
+  type t = { frames : int; parse_errors : int; error_frames : int; reconnects : int }
+end
+
+val create_with_stats : (* same arguments *) -> (Market_data.Feed.t * (unit -> Stats.t)) Deferred.t
 ```
 
 A read-only [market-data](https://github.com/winterchill-trading/market-data) feed over
@@ -174,10 +252,13 @@ the public websocket, for the simulator and the real Hyperliquid API. Symbols ar
 | `Bbo`     | `l2Book`         | top of book, emitted when it changes                         |
 | `Funding` | `activeAssetCtx` | `funding`, `markPx`, `oraclePx` (index); no venue timestamp, so `exch_ts` = `recv_ts`; next funding on the hour. Not served by the simulator |
 
-`recv_ts` is taken when the frame is read, and `on_raw` sees the frame text before it is
-parsed (an `l2Book` frame feeding both `L2` and `Bbo` is passed once per stream).
-Reconnects use `Venue_net.Ws_client` backoff and resubscribe, which brings a fresh book
-snapshot. Unparsable frames are logged and dropped. Pipes of streams not requested are
+`recv_ts` is taken from `time_source` (default the wall clock) when the frame is read,
+and `on_raw` sees each data frame exactly once, before it is parsed. An `l2Book` frame
+feeds both `L2` and `Bbo` but is passed once, under `L2` when `L2` is requested and under
+`Bbo` otherwise, so a recorder stores it once. Reconnects use `Venue_net.Ws_client`
+backoff and resubscribe, which brings a fresh book snapshot. Unparsable frames are logged
+and dropped; `create_with_stats` counts them, along with server error frames and
+reconnects. Pipes of streams not requested are
 closed; the others are unbounded, so read them all.
 
 ## CLI
@@ -191,7 +272,12 @@ hl-cli watch -l2book BTC -trades BTC -all-mids      # prints every websocket mes
 hl-cli watch -order-updates 0x... -user-fills 0x... -ws-url ws://localhost:3000/ws -debug
 hl-cli feed -symbol BTC -streams trades,bbo         # normalized market-data events
 hl-cli feed -base-url https://api.hyperliquid.xyz -symbol BTC -streams trades,bbo,l2,funding -raw
+HL_PRIVATE_KEY=0x... hl-cli address                 # account address of the key
+HL_PRIVATE_KEY=0x... hl-cli cancel -base-url https://api.hyperliquid-testnet.xyz -asset 0 -oid 1
 ```
+
+`cancel` signs with `HL_PRIVATE_KEY` and refuses `api.hyperliquid.xyz` unless given
+`-allow-mainnet`.
 
 `feed` prints `Market_data.Event.t` sexps on stdout (`-raw` also prints each frame on
 stderr). Checked against the simulator with
@@ -217,11 +303,19 @@ dune exec hl-cli -- feed -symbol BTC -streams trades,bbo
 ## Tests
 
 `dune test` runs ppx_expect tests with no network access: request encodings, response
-decoding (including error cases), nonce ordering, websocket message encoding and
-decoding, `Live_feed` normalization of captured frames, and a loopback test that runs a websocket
+decoding (including error cases), nonce ordering, Keccak-256 and MessagePack vectors,
+the SDK signing vectors, typed handles, websocket message encoding and decoding,
+`Live_feed` normalization of captured frames, and loopback tests that run a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
-resubscription, ping/pong, silent-connection detection and shutdown. The handshake
-(RFC 6455 vectors), backoff and keepalive variants are tested in venue-net.
+resubscription, ping/pong, silent-connection detection and shutdown. The reconnect tests
+in `test_reconnect_fake_clock.ml` step the backoff on a synthetic `Time_source` (no
+reconnect at 990 ms of a 1 s backoff, one at 1 s) and check the `Live_feed` stats.
+
+`test/fixtures/hyperliquid-BTC-2026-10-12T13-35/` is a trimmed minute recorded from
+mainnet by market-recorder (`<recv_ts> <frame>` per line, one file per stream: 25 trades
+frames, 6 `l2Book`, 12 `activeAssetCtx`). Every frame decodes; normalized, they give 40
+trades, 6 L2 snapshots, 6 bbo and 12 funding events. The handshake (RFC 6455 vectors),
+backoff and keepalive variants are tested in venue-net.
 
 ## macOS and OpenSSL
 
