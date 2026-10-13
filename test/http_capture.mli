@@ -14,7 +14,8 @@ end
 
 type t
 
-val start : ?response:string -> unit -> t Deferred.t
+(** [respond], when given, computes the response body from the request instead. *)
+val start : ?response:string -> ?respond:(Request.t -> string) -> unit -> t Deferred.t
 
 (** [http://127.0.0.1:<port>]. *)
 val base_url : t -> Uri.t

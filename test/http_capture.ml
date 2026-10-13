@@ -14,7 +14,7 @@ type t =
   ; requests : Request.t Queue.t
   }
 
-let start ?(response = {|{"status":"ok","response":{"type":"default"}}|}) () =
+let start ?(response = {|{"status":"ok","response":{"type":"default"}}|}) ?respond () =
   let requests = Queue.create () in
   let%map server =
     Cohttp_async.Server.create
@@ -22,13 +22,17 @@ let start ?(response = {|{"status":"ok","response":{"type":"default"}}|}) () =
       (Tcp.Where_to_listen.bind_to Localhost On_port_chosen_by_os)
       (fun ~body _ request ->
          let%bind body = Cohttp_async.Body.to_string body in
-         Queue.enqueue
-           requests
+         let request =
            { Request.path = Uri.path (Cohttp.Request.uri request)
            ; x_address = Cohttp.Header.get (Cohttp.Request.headers request) "x-address"
            ; body
-           };
-         Cohttp_async.Server.respond_string response)
+           }
+         in
+         Queue.enqueue requests request;
+         Cohttp_async.Server.respond_string
+           (match respond with
+            | None -> response
+            | Some respond -> respond request))
   in
   { server; requests }
 ;;
