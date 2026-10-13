@@ -330,6 +330,38 @@ including the top-of-book de-duplication of `Bbo`; `Live_feed` resets it on ever
 `disconnect` resets), which is what `Market_data.Rebuild_norm` needs to rebuild `norm/`
 event logs from market-recorder raw minute files.
 
+`trades` and `l2Book` frames are read by `Frame_scan`, `[@zero_alloc]` readers that take
+the fields straight from the frame (decimals to fixed-point units, one pass over each
+trade and level object) into reused records; events are then built from those units.
+Any shape the readers do not recognise (escaped strings, exponents, signs, missing or
+repeated fields, more than 256 levels a side) goes to the Yojson decoder, as do
+`activeAssetCtx` frames. When `L2` is not wanted, only the top level of each side is
+read. Each coin's `Instrument.t` is created once per normalizer and shared by all its
+events. `Normalizer.For_testing.frame_yojson` is the Yojson-only path, kept as the
+reference: `test_normalizer_scan.ml` runs every recorded frame (as recorded, re-printed
+with whitespace, and with every object's keys reversed) through both paths, for five
+stream sets, and requires identical events.
+
+#### Normalizer performance
+
+`dune exec ./bench/main.exe -- -quota 5`, one recorded frame per run (trades frames carry
+1.6 trades on average, `l2Book` frames 20 levels a side). Fastest of six runs on an
+arm64 laptop under load from other builds; CI is amd64. Words are exact.
+
+| frame | before (Yojson) | after (Frame_scan) | words before | words after |
+| --- | ---: | ---: | ---: | ---: |
+| trades | 4.2 us | 1.3 us (O3 1.1 us) | 603 | 41 |
+| l2Book, all streams | 19.2 us | 5.9 us (O3 4.7 us) | 3883 | 274 |
+| l2Book, Bbo only | 19.1 us | 3.2 us (O3 3.1 us) | 3875 | 22 |
+| activeAssetCtx (Yojson both) | 3.1 us | 3.2 us | 415 | 414 |
+
+Dev and release builds measure the same within 0.2 us; `OCAMLPARAM='_,O3=1'` gains
+10-20% on the scanner. `l2 scan` (the reader alone) is 5.8 us and 0 words: what is left
+of an `l2Book` frame's cost is the scan itself, about 2 ns per byte. The words left are
+the events: a trade is a record, its `Event.t` box, a list cell and the `trade_id`
+string; an L2 snapshot is a list cell and a record per level. The pinned counts are in
+`test_normalizer_words.ml` (whole frames) and `test_frame_scan.ml` (0 words per read).
+
 ## CLI
 
 `hl-cli` (`bin/hl_cli.ml`) is a smoke-testing tool:
@@ -375,8 +407,9 @@ dune exec hl-cli -- feed -symbol BTC -streams trades,bbo
 `dune test` runs ppx_expect tests with no network access: request encodings, response
 decoding (including error cases), nonce ordering, Keccak-256 and MessagePack vectors,
 the SDK signing vectors, typed handles, websocket message encoding and decoding,
-`Normalizer` and `Live_feed` normalization of captured frames, `rebuild-norm` over the
-recorded minute, and loopback tests that run a websocket
+`Normalizer` and `Live_feed` normalization of captured frames, the `Frame_scan` readers
+against the Yojson path and `Fixed_decimal.of_string` (expect and quickcheck), words per
+frame pinned, `rebuild-norm` over the recorded minute, and loopback tests that run a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
 resubscription, ping/pong, silent-connection detection and shutdown. The reconnect tests
 in `test_reconnect_fake_clock.ml` step the backoff on a synthetic `Time_source` (no
