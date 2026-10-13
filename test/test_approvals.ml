@@ -154,3 +154,69 @@ let%expect_test "agent names" =
     |}];
   return ()
 ;;
+
+let agent_key = Signing.Private_key.of_hex (String.make 63 '0' ^ "2") |> Or_error.ok_exn
+let account = Signing.Private_key.address key
+
+let%expect_test "agent handle: orders signed by the agent for the account" =
+  let%bind () =
+    with_server ~masked:true (fun config ->
+      let t =
+        Client.trading_with_agent
+          ~is_mainnet:false
+          ~agent_key
+          ~account_address:account
+          config
+      in
+      print_s
+        [%message
+          ""
+            ~agent_address:(Signing.Private_key.address agent_key : Address.t)
+            ~account:(Client.account t : Address.t option)
+            ~is_agent:(Client.is_agent t : bool)];
+      let%bind response =
+        Client.cancel t [ { asset = Asset.of_int 0; oid = Order_id.of_int 1 } ]
+      in
+      print_s [%sexp (response : Exchange_response.t Or_error.t)];
+      let%map refused = Client.approve_agent t ~agent_address:agent ~agent_name:"copy" in
+      print_s [%sexp (refused : Exchange_response.t Or_error.t)])
+  in
+  [%expect
+    {|
+    ((agent_address 0x2b5ad5c4795c026514f8317c7a215e218dccd6cf)
+     (account (0x14791697260e4c9a71f18484c9f997b308e59325)) (is_agent true))
+    (Ok (Ok Default))
+    (Error "approvals must be signed by the account's own key, not by an agent")
+    (/exchange (x_address (0x14791697260e4c9a71f18484c9f997b308e59325))
+     (signer (Ok 0x2b5ad5c4795c026514f8317c7a215e218dccd6cf)))
+    {"action":{"type":"cancel","cancels":[{"a":0,"o":1}]},"nonce":"<nonce>","signature":"<signature>"}
+    |}];
+  return ()
+;;
+
+let%expect_test "owner handle approves through Client" =
+  let%bind () =
+    with_server (fun config ->
+      let t = Client.trading ~key ~is_mainnet:false config in
+      let%bind response =
+        Client.approve_agent t ~nonce:1 ~agent_address:agent ~agent_name:"copy"
+      in
+      print_s [%sexp (response : Exchange_response.t Or_error.t)];
+      let%map response =
+        Client.approve_builder_fee t ~nonce:2 ~builder ~max_fee_tenths_bp:100
+      in
+      print_s [%sexp (response : Exchange_response.t Or_error.t)])
+  in
+  [%expect
+    {|
+    (Ok (Ok Default))
+    (Ok (Ok Default))
+    (/exchange (x_address (0x14791697260e4c9a71f18484c9f997b308e59325))
+     (signer (Ok 0x14791697260e4c9a71f18484c9f997b308e59325)))
+    {"action":{"type":"approveAgent","hyperliquidChain":"Testnet","signatureChainId":"0x66eee","agentAddress":"0x00000000000000000000000000000000000000a1","agentName":"copy","nonce":1},"nonce":1,"signature":{"r":"0xa4213abaefe87cb544390cd8935f33ea18e6b83b9bf98f57fbe572f43253498a","s":"0x5cc8cd7f7094e93df578d6bd57116dfc3939965975f44ef2a83f6eb995754618","v":28}}
+    (/exchange (x_address (0x14791697260e4c9a71f18484c9f997b308e59325))
+     (signer (Ok 0x14791697260e4c9a71f18484c9f997b308e59325)))
+    {"action":{"type":"approveBuilderFee","hyperliquidChain":"Testnet","signatureChainId":"0x66eee","maxFeeRate":"0.1%","builder":"0x00000000000000000000000000000000000000b1","nonce":2},"nonce":2,"signature":{"r":"0xaa90a116d0340476c5c52a77daf0e8da06cc13507d59be8e7331b31ca5eda5ea","s":"0x2bfb84736b535037e7138c90f9dc4f9bc1492fd3cf60d98ded76db5524cfa555","v":28}}
+    |}];
+  return ()
+;;
