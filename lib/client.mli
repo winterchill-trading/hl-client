@@ -81,6 +81,15 @@ val all_mids : _ t -> All_mids.t Or_error.t Deferred.t
 val open_orders : ?user:Address.t -> _ t -> Open_order.t list Or_error.t Deferred.t
 val user_fills : ?user:Address.t -> _ t -> User_fill.t list Or_error.t Deferred.t
 
+(** See {!Info.user_fills_by_time}. *)
+val user_fills_by_time
+  :  ?user:Address.t
+  -> ?end_time:int
+  -> ?aggregate_by_time:bool
+  -> _ t
+  -> start_time:int
+  -> User_fill.t list Or_error.t Deferred.t
+
 val clearinghouse_state
   :  ?user:Address.t
   -> _ t

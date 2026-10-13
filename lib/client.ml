@@ -87,6 +87,11 @@ let l2_book ?n_sig_figs ?mantissa t coin =
 let all_mids t = Info_endpoint.all_mids t.config
 let open_orders ?user t = Info_endpoint.open_orders ?user t.config
 let user_fills ?user t = Info_endpoint.user_fills ?user t.config
+
+let user_fills_by_time ?user ?end_time ?aggregate_by_time t ~start_time =
+  Info_endpoint.user_fills_by_time ?user ?end_time ?aggregate_by_time t.config ~start_time
+;;
+
 let clearinghouse_state ?user t = Info_endpoint.clearinghouse_state ?user t.config
 let meta t = Info_endpoint.meta t.config
 
