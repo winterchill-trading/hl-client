@@ -38,7 +38,7 @@ let compare_paths frames =
       | Error _, Error _ -> ()
       | _ ->
         incr differ;
-        print_s [%message "differ" frame]);
+        print_s [%message "differ" ~frame:(String.prefix frame 100 : string)]);
     print_s
       [%message
         ""
