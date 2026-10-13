@@ -28,6 +28,9 @@ module Ws = Ws
 (** Websocket frames to normalized market data events, the pure core of {!Live_feed}. *)
 module Normalizer = Normalizer
 
+(** Zero-allocation readers for [trades] and [l2Book] frames, used by {!Normalizer}. *)
+module Frame_scan = Frame_scan
+
 (** {!Normalizer} as a [Market_data.Normalizer.S], for [rebuild-norm]. *)
 module Raw_normalizer = Raw_normalizer
 
