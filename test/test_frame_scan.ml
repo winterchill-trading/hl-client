@@ -70,10 +70,10 @@ let read_trades frame =
   let rec loop p =
     if p >= 0
     then (
-      let stop = Frame_scan.value_end frame p in
-      if not (Frame_scan.Trade.read frame ~from:p ~stop t)
+      let stop = Frame_scan.Trade.read_at frame p t in
+      if stop < 0
       then print_endline "refused"
-      else
+      else (
         print_s
           [%message
             ""
@@ -83,7 +83,7 @@ let read_trades frame =
               ~sz:(t.sz : int)
               ~time:(t.time : int)
               ~tid:(t.tid : int)];
-      loop (Frame_scan.next_element frame stop))
+        loop (Frame_scan.next_element frame stop)))
     else print_s [%message "end" ~at:(p : int)]
   in
   loop (Frame_scan.first_element frame (Frame_scan.trades_data frame))
@@ -102,16 +102,13 @@ let%expect_test "trades" =
     (end (at -1))
     |}];
   read_trades {|{"channel":"trades","data":[{"coin":"BTC","side":"X","px":"1"}]}|};
-  [%expect {|
-    refused
-    (end (at -1))
-    |}]
+  [%expect {| refused |}]
 ;;
 
 let%expect_test "book" =
   let t = Frame_scan.Book.create () in
   let show frame =
-    if Frame_scan.Book.read frame t
+    if Frame_scan.Book.read ~depth:Frame_scan.Book.capacity frame t
     then
       print_s
         [%message
@@ -152,10 +149,11 @@ let%expect_test "readers allocate nothing" =
   let book = Frame_scan.Book.create () in
   let read_trade () =
     let p = Frame_scan.first_element trades_frame (Frame_scan.trades_data trades_frame) in
-    let stop = Frame_scan.value_end trades_frame p in
-    ignore (Frame_scan.Trade.read trades_frame ~from:p ~stop trade : bool)
+    ignore (Frame_scan.Trade.read_at trades_frame p trade : int)
   in
-  let read_book () = ignore (Frame_scan.Book.read book_frame book : bool) in
+  let read_book () =
+    ignore (Frame_scan.Book.read ~depth:Frame_scan.Book.capacity book_frame book : bool)
+  in
   let channel () = ignore (Frame_scan.channel book_frame : Frame_scan.Channel.t) in
   print_s
     [%message

@@ -42,10 +42,13 @@ module Coins = struct
     ; mutable last_top : Md.Bbo.t option
     }
 
-  type t = entry list array
+  type t =
+    { table : entry list array
+    ; mutable all : entry list
+    }
 
   let buckets = 256
-  let create () : t = Array.create ~len:buckets []
+  let create () = { table = Array.create ~len:buckets []; all = [] }
 
   (* FNV-1a over the bytes (offset basis cut to 63 bits), folded into a bucket. *)
   let[@zero_alloc] hash s ~pos ~len =
@@ -64,19 +67,20 @@ module Coins = struct
   ;;
 
   (* Allocation-free on a hit: [find_in] is inlined into the match. *)
-  let find (t : t) s ~pos ~len =
+  let find t s ~pos ~len =
     let b = hash s ~pos ~len in
-    match find_in t.(b) s ~pos ~len with
+    match find_in t.table.(b) s ~pos ~len with
     | Some e -> e
     | None ->
       let name = String.sub s ~pos ~len in
       let e = { name; instrument = instrument name; last_top = None } in
-      t.(b) <- e :: t.(b);
+      t.table.(b) <- e :: t.table.(b);
+      t.all <- e :: t.all;
       e
   ;;
 
   let of_name t name = find t name ~pos:0 ~len:(String.length name)
-  let reset (t : t) = Array.iter t ~f:(List.iter ~f:(fun e -> e.last_top <- None))
+  let reset t = List.iter t.all ~f:(fun e -> e.last_top <- None)
 end
 
 (* The Yojson path: every frame the scanner refuses, and every [activeAssetCtx] frame. *)
@@ -225,10 +229,10 @@ let scan_trades t ~recv_ts frame =
     else (
       let stop =
         if p >= 0 && Char.equal (String.unsafe_get frame p) '{'
-        then Frame_scan.value_end frame p
+        then Frame_scan.Trade.read_at frame p s
         else -1
       in
-      if stop < 0 || not (Frame_scan.Trade.read frame ~from:p ~stop s)
+      if stop < 0
       then raise_notrace Refused
       else (
         let coin = Coins.find t.coins frame ~pos:s.coin_pos ~len:s.coin_len in
@@ -273,7 +277,9 @@ let unchanged_top (coin : Coins.entry) (b : Frame_scan.Book.t) =
 
 let scan_book t ~recv_ts frame =
   let b = t.book_scan in
-  if not (Frame_scan.Book.read frame b) then raise_notrace Refused;
+  (* Only the top level is read when the l2 snapshot is not wanted. *)
+  let depth = if t.l2 then Frame_scan.Book.capacity else 1 in
+  if not (Frame_scan.Book.read ~depth frame b) then raise_notrace Refused;
   let coin = Coins.find t.coins frame ~pos:b.coin_pos ~len:b.coin_len in
   let exch_ts = time_of_ms b.time in
   let top =

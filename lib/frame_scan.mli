@@ -44,6 +44,11 @@ val decimal : string -> int -> int
 val int_at : string -> int -> int
 [@@zero_alloc]
 
+(** Scratch for reading an object's key/value pairs in one pass. *)
+module Pair : sig
+  type t
+end
+
 module Trade : sig
   (** One element of a [trades] frame's [data] array. *)
   type t =
@@ -54,12 +59,14 @@ module Trade : sig
     ; mutable sz : int (** units of 10^-8 *)
     ; mutable time : int (** milliseconds since the epoch *)
     ; mutable tid : int
+    ; pair : Pair.t
     }
 
   val create : unit -> t
 
-  (** Reads the trade object spanning [\[from, stop)]. *)
-  val read : string -> from:int -> stop:int -> t -> bool
+  (** Reads the trade object opening at [pos] (its ['{']) in one pass: the position just
+      after its ['}'], or [-1]. *)
+  val read_at : string -> int -> t -> int
   [@@zero_alloc]
 end
 
@@ -84,15 +91,20 @@ module Book : sig
     ; mutable time : int
     ; mutable n_bids : int
     ; mutable n_asks : int
+    ; mutable side_end : int (** scratch: just after the last side array read *)
     ; bid_px : int array
     ; bid_sz : int array
     ; ask_px : int array
     ; ask_sz : int array
+    ; pair : Pair.t
     }
 
   val capacity : int
   val create : unit -> t
-  val read : string -> t -> bool [@@zero_alloc]
+  (** Reads the first [depth] (at most [capacity]) levels of each side and steps over
+      the rest without reading them. *)
+  val read : depth:int -> string -> t -> bool
+  [@@zero_alloc]
 end
 
 (** [equal_sub s ~pos ~len name]: the bytes of [s] at [pos] are exactly [name]. *)

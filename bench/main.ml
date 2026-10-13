@@ -27,6 +27,17 @@ let per_frame ?streams name text =
     ignore (Normalizer.frame t ~recv_ts:Time_ns.epoch frame : Md.Event.t list Or_error.t))
 ;;
 
+(* The reader alone, without building events. *)
+let book_scan () =
+  let frames = frames Frames.l2 in
+  let t = Frame_scan.Book.create () in
+  let i = ref 0 in
+  Bench.Test.create ~name:"l2 scan" (fun () ->
+    let frame = frames.(!i) in
+    i := (!i + 1) % Array.length frames;
+    ignore (Frame_scan.Book.read ~depth:Frame_scan.Book.capacity frame t : bool))
+;;
+
 let () =
   Command_unix.run
     (Bench.make_command
@@ -34,5 +45,6 @@ let () =
        ; per_frame "l2" Frames.l2
        ; per_frame ~streams:[ Bbo ] "bbo only" Frames.l2
        ; per_frame "funding" Frames.funding
+       ; book_scan ()
        ])
 ;;

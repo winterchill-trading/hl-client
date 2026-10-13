@@ -233,6 +233,85 @@ let[@zero_alloc] next_element s pos =
     else -2)
 ;;
 
+(* One pass over a flat run of key/value pairs. [Pair.read s c at] reads the pair whose
+   key opens at [at]: string, scalar, array and object values are all stepped over. *)
+module Pair = struct
+  type t =
+    { mutable key : int
+    ; mutable key_len : int
+    ; mutable value : int
+    ; mutable next : int
+    }
+
+  let create () = { key = 0; key_len = 0; value = 0; next = 0 }
+
+  (* Position after the bare scalar (number, true, false, null) at [v], or -1. *)
+  let[@zero_alloc] scalar_end s v =
+    let n = String.length s in
+    let mutable e = v in
+    while
+      e < n
+      &&
+      let c = String.unsafe_get s e in
+      not
+        (Char.equal c ','
+         || Char.equal c '}'
+         || Char.equal c ']'
+         || Char.equal c '{'
+         || Char.equal c '['
+         || Char.equal c '"'
+         || is_ws c)
+    do
+      e <- e + 1
+    done;
+    if e = v then -1 else e
+  ;;
+
+  (* 1 when another pair follows ([c.next] is its key), 0 at the closing ['}'] ([c.next]
+     is just after it), -1 on anything else. *)
+  let[@zero_alloc] read s c at =
+    let n = String.length s in
+    let key_close = if at < n then string_close s at else -1 in
+    let colon = if key_close < 0 then n else skip_ws s (key_close + 1) in
+    if colon >= n || not (Char.equal (String.unsafe_get s colon) ':')
+    then -1
+    else (
+      let v = skip_ws s (colon + 1) in
+      let stop =
+        if v >= n
+        then -1
+        else (
+          let c = String.unsafe_get s v in
+          if Char.equal c '"'
+          then (
+            let close = string_close s v in
+            if close < 0 then -1 else close + 1)
+          else if Char.equal c '[' || Char.equal c '{'
+          then value_end s v
+          else scalar_end s v)
+      in
+      let k = if stop < 0 then n else skip_ws s stop in
+      if k >= n
+      then -1
+      else (
+        c.key <- at + 1;
+        c.key_len <- key_close - at - 1;
+        c.value <- v;
+        let sep = String.unsafe_get s k in
+        if Char.equal sep ','
+        then (
+          c.next <- skip_ws s (k + 1);
+          1)
+        else if Char.equal sep '}'
+        then (
+          c.next <- k + 1;
+          0)
+        else -1))
+  ;;
+
+  let[@zero_alloc] is s c name = equal_sub s ~pos:c.key ~len:c.key_len name
+end
+
 module Trade = struct
   type t =
     { mutable coin_pos : int
@@ -242,20 +321,52 @@ module Trade = struct
     ; mutable sz : int
     ; mutable time : int
     ; mutable tid : int
+    ; pair : Pair.t
     }
 
   let create () =
-    { coin_pos = 0; coin_len = 0; buy = false; px = 0; sz = 0; time = 0; tid = 0 }
+    { coin_pos = 0
+    ; coin_len = 0
+    ; buy = false
+    ; px = 0
+    ; sz = 0
+    ; time = 0
+    ; tid = 0
+    ; pair = Pair.create ()
+    }
   ;;
 
-  let[@zero_alloc] read s ~from ~stop t =
-    let coin = find_key s ~from ~stop {|"coin"|} in
+  (* One pass over the object's pairs; a missing or repeated field refuses it. *)
+  let[@zero_alloc] read_at s p t =
+    let c = t.pair in
+    let mutable coin = -1 in
+    let mutable side = -1 in
+    let mutable px = -1 in
+    let mutable sz = -1 in
+    let mutable time = -1 in
+    let mutable tid = -1 in
+    let mutable state = 1 in
+    let mutable at = skip_ws s (p + 1) in
+    while state = 1 do
+      state <- Pair.read s c at;
+      if state >= 0
+      then (
+        at <- c.next;
+        let v = c.value in
+        if Pair.is s c "coin"
+        then coin <- (if coin = -1 then v else -2)
+        else if Pair.is s c "side"
+        then side <- (if side = -1 then v else -2)
+        else if Pair.is s c "px"
+        then px <- (if px = -1 then decimal s v else -2)
+        else if Pair.is s c "sz"
+        then sz <- (if sz = -1 then decimal s v else -2)
+        else if Pair.is s c "time"
+        then time <- (if time = -1 then int_at s v else -2)
+        else if Pair.is s c "tid"
+        then tid <- (if tid = -1 then int_at s v else -2))
+    done;
     let coin_close = if coin < 0 then -1 else string_close s coin in
-    let side = find_key s ~from ~stop {|"side"|} in
-    let px = decimal s (find_key s ~from ~stop {|"px"|}) in
-    let sz = decimal s (find_key s ~from ~stop {|"sz"|}) in
-    let time = int_at s (find_key s ~from ~stop {|"time"|}) in
-    let tid = int_at s (find_key s ~from ~stop {|"tid"|}) in
     let side_ok =
       side >= 0
       && side + 2 < String.length s
@@ -264,8 +375,14 @@ module Trade = struct
       && (Char.equal (String.unsafe_get s (side + 1)) 'B'
           || Char.equal (String.unsafe_get s (side + 1)) 'A')
     in
-    if coin_close < 0 || (not side_ok) || px < 0 || sz < 0 || time < 0 || tid < 0
-    then false
+    if state < 0
+       || coin_close < 0
+       || (not side_ok)
+       || px < 0
+       || sz < 0
+       || time < 0
+       || tid < 0
+    then -1
     else (
       t.coin_pos <- coin + 1;
       t.coin_len <- coin_close - coin - 1;
@@ -274,7 +391,7 @@ module Trade = struct
       t.sz <- sz;
       t.time <- time;
       t.tid <- tid;
-      true)
+      at)
   ;;
 end
 
@@ -292,10 +409,12 @@ module Book = struct
     ; mutable time : int
     ; mutable n_bids : int
     ; mutable n_asks : int
+    ; mutable side_end : int
     ; bid_px : int array
     ; bid_sz : int array
     ; ask_px : int array
     ; ask_sz : int array
+    ; pair : Pair.t
     }
 
   let capacity = 256
@@ -306,79 +425,120 @@ module Book = struct
     ; time = 0
     ; n_bids = 0
     ; n_asks = 0
+    ; side_end = 0
     ; bid_px = Array.create ~len:capacity 0
     ; bid_sz = Array.create ~len:capacity 0
     ; ask_px = Array.create ~len:capacity 0
     ; ask_sz = Array.create ~len:capacity 0
+    ; pair = Pair.create ()
     }
   ;;
 
-  (* The levels of the side array opening at [pos] into [px] and [sz]; the count, or -1. *)
-  let[@zero_alloc] side s pos px sz =
-    let mutable count = 0 in
-    let mutable p = first_element s pos in
-    while p >= 0 do
-      let stop = if Char.equal (String.unsafe_get s p) '{' then value_end s p else -1 in
-      if stop < 0 || count >= capacity
-      then p <- -2
-      else (
-        let level_px = decimal s (find_key s ~from:p ~stop {|"px"|}) in
-        let level_sz = decimal s (find_key s ~from:p ~stop {|"sz"|}) in
-        if level_px < 0 || level_sz < 0
-        then p <- -2
-        else (
-          Array.unsafe_set px count level_px;
-          Array.unsafe_set sz count level_sz;
-          count <- count + 1;
-          p <- next_element s stop))
+  (* The level object at [p], read in one pass; its [px] and [sz] go to slot [i]. The
+     position after its ['}'], or -1. *)
+  let[@zero_alloc] level s c p px sz i =
+    let mutable level_px = -1 in
+    let mutable level_sz = -1 in
+    let mutable state = 1 in
+    let mutable at = skip_ws s (p + 1) in
+    while state = 1 do
+      state <- Pair.read s c at;
+      if state >= 0
+      then (
+        at <- c.Pair.next;
+        if Pair.is s c "px"
+        then level_px <- (if level_px = -1 then decimal s c.value else -2)
+        else if Pair.is s c "sz"
+        then level_sz <- (if level_sz = -1 then decimal s c.value else -2))
     done;
-    if p = -1 then count else -1
+    if state < 0 || level_px < 0 || level_sz < 0
+    then -1
+    else (
+      Array.unsafe_set px i level_px;
+      Array.unsafe_set sz i level_sz;
+      at)
   ;;
 
-  let[@zero_alloc] read s t =
+  (* The levels of the side array opening at [pos] into [px] and [sz]: the count, with
+     [t.side_end] set to the position after the closing [']'], or -1. *)
+  let[@zero_alloc] side s t ~depth pos px sz =
     let n = String.length s in
-    let data = find_key s ~from:0 ~stop:n {|"data"|} in
-    let data_end =
-      if data >= 0 && data < n && Char.equal (String.unsafe_get s data) '{'
-      then value_end s data
-      else -1
-    in
-    if data_end < 0
-    then false
-    else (
-      let coin = find_key s ~from:data ~stop:data_end {|"coin"|} in
-      let coin_close = if coin < 0 then -1 else string_close s coin in
-      let time = int_at s (find_key s ~from:data ~stop:data_end {|"time"|}) in
-      let levels = find_key s ~from:data ~stop:data_end {|"levels"|} in
-      let bids = if levels < 0 then -2 else first_element s levels in
-      let bids_end =
-        if bids >= 0 && Char.equal (String.unsafe_get s bids) '['
-        then value_end s bids
+    let mutable count = 0 in
+    let mutable p = first_element s pos in
+    let mutable last = pos in
+    while p >= 0 && count < depth do
+      let stop =
+        if Char.equal (String.unsafe_get s p) '{' && count < capacity
+        then level s t.pair p px sz count
         else -1
       in
-      let asks = if bids_end < 0 then -2 else next_element s bids_end in
-      let asks_end =
+      if stop < 0
+      then p <- -2
+      else (
+        count <- count + 1;
+        last <- stop;
+        p <- next_element s stop)
+    done;
+    if p >= 0 && depth >= capacity
+    then (* More levels than [capacity]: a full read cannot hold them. *)
+      -1
+    else if p >= 0
+    then (
+      (* [depth] levels read; step over the rest without reading them. *)
+      let close = value_end s pos in
+      if close < 0
+      then -1
+      else (
+        t.side_end <- close;
+        count))
+    else if p = -1
+    then (
+      (* [next_element] stopped at the [']']; an empty side stopped right after ['[']. *)
+      let close = skip_ws s (if count = 0 then pos + 1 else last) in
+      if close < n && Char.equal (String.unsafe_get s close) ']'
+      then (
+        t.side_end <- close + 1;
+        count)
+      else -1)
+    else -1
+  ;;
+
+  let[@zero_alloc] read ~depth s t =
+    let n = String.length s in
+    let data = find_key s ~from:0 ~stop:n {|"data"|} in
+    if data < 0 || data >= n || not (Char.equal (String.unsafe_get s data) '{')
+    then false
+    else (
+      (* The first ["coin"], ["time"] and ["levels"] keys after ["data"] are its own: the
+         level objects have none of them. *)
+      let coin = find_key s ~from:data ~stop:n {|"coin"|} in
+      let coin_close = if coin < 0 then -1 else string_close s coin in
+      let time = int_at s (find_key s ~from:data ~stop:n {|"time"|}) in
+      let levels = find_key s ~from:data ~stop:n {|"levels"|} in
+      let bids = if levels < 0 then -2 else first_element s levels in
+      let n_bids =
+        if bids >= 0 && Char.equal (String.unsafe_get s bids) '['
+        then side s t ~depth bids t.bid_px t.bid_sz
+        else -1
+      in
+      let asks = if n_bids < 0 then -2 else next_element s t.side_end in
+      let n_asks =
         if asks >= 0 && Char.equal (String.unsafe_get s asks) '['
-        then value_end s asks
+        then side s t ~depth asks t.ask_px t.ask_sz
         else -1
       in
       if coin_close < 0
          || time < 0
-         || asks_end < 0
+         || n_asks < 0
          (* [levels] is exactly [bids; asks]. *)
-         || next_element s asks_end <> -1
+         || next_element s t.side_end <> -1
       then false
       else (
-        let n_bids = side s bids t.bid_px t.bid_sz in
-        let n_asks = side s asks t.ask_px t.ask_sz in
-        if n_bids < 0 || n_asks < 0
-        then false
-        else (
-          t.coin_pos <- coin + 1;
-          t.coin_len <- coin_close - coin - 1;
-          t.time <- time;
-          t.n_bids <- n_bids;
-          t.n_asks <- n_asks;
-          true)))
+        t.coin_pos <- coin + 1;
+        t.coin_len <- coin_close - coin - 1;
+        t.time <- time;
+        t.n_bids <- n_bids;
+        t.n_asks <- n_asks;
+        true))
   ;;
 end
