@@ -141,3 +141,8 @@ let max_builder_fee config ~user ~builder =
   Http.post_json (Config.info_uri config) (Max_builder_fee.yojson_of_t request)
   >>| Or_error.bind ~f:(Http.decode_json ~f:Max_builder_fee.response_of_yojson)
 ;;
+
+let user_role config ~user =
+  Http.post_json (Config.info_uri config) (User_role.yojson_of_t { User_role.user })
+  >>| Or_error.bind ~f:(Http.decode_json ~f:User_role.response_of_yojson)
+;;

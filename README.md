@@ -110,12 +110,14 @@ val user_fills_detailed : ?user:Address.t -> Config.t
   -> User_fill.Detailed.t list Or_error.t Deferred.t
 val max_builder_fee : Config.t -> user:Address.t -> builder:Address.t
   -> int Or_error.t Deferred.t
+val user_role : Config.t -> user:Address.t -> User_role.Role.t Or_error.t Deferred.t
 ```
 
 `user_fills_detailed` keeps each fill's `builderFee` (the builder's part of `fee`, absent
 when zero) and `liquidation`, which `User_fill.t` drops. `max_builder_fee` is the fee
 `user` has approved for `builder` in tenths of a basis point, `0` when none; check it
-before sending orders with `?builder`, or the exchange rejects them.
+before sending orders with `?builder`, or the exchange rejects them. `user_role` tells an
+ordinary account from an agent (API wallet), a vault or a sub-account.
 
 ### `Exchange` (`POST /exchange`)
 

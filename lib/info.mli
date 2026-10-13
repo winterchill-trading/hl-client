@@ -76,3 +76,7 @@ val max_builder_fee
   -> user:Address.t
   -> builder:Address.t
   -> int Or_error.t Deferred.t
+
+(** [userRole] ({!Hl_protocol.User_role}): whether [user] is an ordinary account, an agent
+    (API wallet), a vault, a sub-account or unknown to the exchange. *)
+val user_role : Config.t -> user:Address.t -> User_role.Role.t Or_error.t Deferred.t
