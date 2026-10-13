@@ -4,6 +4,8 @@
   core
   async
   async_websocket
+  cohttp
+  cohttp-async
   hl-client
   hl-protocol
   ppx_yojson_conv_lib
