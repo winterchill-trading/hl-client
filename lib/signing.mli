@@ -1,4 +1,5 @@
-(** Hyperliquid request signing for L1 actions (orders, cancels, modifies).
+(** Hyperliquid request signing for L1 actions (orders, cancels, modifies) and for
+    user-signed approval actions (see below).
 
     Follows the official Python SDK ([hyperliquid/utils/signing.py]):
 
@@ -61,8 +62,37 @@ val sign_l1_action
   -> Yojson.Safe.t
   -> Signature.t
 
+(** Signs a 32-byte digest (RFC 6979 nonces, as the SDK's [eth_account]). *)
+val sign_digest : Private_key.t -> string -> Signature.t
+
 (** The address that produced [signature] over [digest]. *)
 val recover : digest:string -> Signature.t -> Address.t Or_error.t
+
+(** {2 User-signed actions}
+
+    [approveAgent] and [approveBuilderFee] are signed directly as EIP-712 typed data
+    instead of through an L1 action hash (Python SDK [sign_user_signed_action] and
+    [user_signed_payload]): domain
+    [{name: "HyperliquidSignTransaction", version: "1", chainId: signatureChainId, verifyingContract: 0x0}],
+    primary type and fields from {!User_signed_action.Eip712}. The exchange recovers the
+    signer from the signature, so these must be signed by the account's own key, never by
+    an agent. *)
+
+(** The EIP-712 digest [keccak256(0x1901 || domainSeparator || hashStruct(message))] in
+    the [HyperliquidSignTransaction] domain, for any primary type. *)
+val user_signed_digest
+  :  chain_id:int
+  -> primary_type:string
+  -> (string * User_signed_action.Eip712.Value.t) list
+  -> string
+
+(** [user_signed_digest] for an approval action. *)
+val user_action_digest : User_signed_action.t -> string
+
+val sign_user_action : Private_key.t -> User_signed_action.t -> Signature.t
+
+(** The address that signed [action]; compare it with the account before posting. *)
+val recover_user_action : User_signed_action.t -> Signature.t -> Address.t Or_error.t
 
 (** A [?sign] hook for {!Exchange}: reads [action], [nonce] and [vaultAddress] from the
     unsigned request body and returns the signature JSON. *)

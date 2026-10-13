@@ -158,6 +158,60 @@ let recover ~digest (signature : Signature.t) =
   address_of_public_key pk
 ;;
 
+(* EIP-712 encoding of the [HyperliquidSignTransaction] domain and its messages, as in the
+   SDK's [user_signed_payload]: atomic values are 32-byte words, strings are hashed. *)
+let user_signed_domain_separator ~chain_id =
+  Keccak.digest
+    (String.concat
+       [ Keccak.digest
+           "EIP712Domain(string name,string version,uint256 chainId,address \
+            verifyingContract)"
+       ; Keccak.digest User_signed_action.Eip712.domain_name
+       ; Keccak.digest User_signed_action.Eip712.domain_version
+       ; word_of_int chain_id
+       ; String.make 32 '\x00'
+       ])
+;;
+
+let encode_value : User_signed_action.Eip712.Value.t -> string = function
+  | String s -> Keccak.digest s
+  | Address address -> String.make 12 '\x00' ^ address_bytes address
+  | Uint64 n -> word_of_int n
+;;
+
+let user_signed_digest ~chain_id ~primary_type fields =
+  let encode_type =
+    primary_type
+    ^ "("
+    ^ String.concat
+        ~sep:","
+        (List.map fields ~f:(fun (name, value) ->
+           User_signed_action.Eip712.Value.solidity_type value ^ " " ^ name))
+    ^ ")"
+  in
+  let struct_hash =
+    Keccak.digest
+      (String.concat
+         (Keccak.digest encode_type
+          :: List.map fields ~f:(fun (_, value) -> encode_value value)))
+  in
+  Keccak.digest
+    (String.concat [ "\x19\x01"; user_signed_domain_separator ~chain_id; struct_hash ])
+;;
+
+let user_action_digest action =
+  user_signed_digest
+    ~chain_id:(User_signed_action.Eip712.chain_id action)
+    ~primary_type:(User_signed_action.Eip712.primary_type action)
+    (User_signed_action.Eip712.fields action)
+;;
+
+let sign_user_action key action = sign_digest key (user_action_digest action)
+
+let recover_user_action action signature =
+  recover ~digest:(user_action_digest action) signature
+;;
+
 let sign_request key ~is_mainnet request =
   let action = Json.member_exn request ~key:"action" in
   let nonce =
