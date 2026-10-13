@@ -23,6 +23,8 @@ let%expect_test "words per frame added by the live feed" =
   print_s
     [%message
       "" ~feed_minus_floor:(Float.iround_nearest_exn (mean feed -. mean floor) : int)];
-  [%expect {| (feed_minus_floor 74) |}];
+  (* 74 while the feed read [Ws_client.messages] one frame at a time; [on_message] drops
+     the pipe hop's 13 words. *)
+  [%expect {| (feed_minus_floor 61) |}];
   Blast_server.close server
 ;;

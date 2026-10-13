@@ -115,17 +115,6 @@ let start
         };
     Deferred.all_unit (List.map requests ~f:(Ws_client.send client))
   in
-  let%map client =
-    Ws_client.connect
-      ~ping:(`Text ({|{"method":"ping"}|}, Time_ns.Span.of_sec 50.))
-      ~max_silent_intervals:1
-      ~on_connect
-      ~log_name:"hl-client live feed"
-      ?time_source
-      ~url:config.ws_url
-      ()
-    >>| ok_exn
-  in
   let trades_r, trades = Pipe.create () in
   let bbo_r, bbo = Pipe.create () in
   let l2_r, l2 = Pipe.create () in
@@ -156,6 +145,22 @@ let start
               [%message
                 "hl-client live feed: unparsable frame" (frame : string) (error : Error.t)]))
   in
+  (* Frames are handed to [on_frame] straight from the connection ([on_message]) rather
+     than read from [Ws_client.messages], which saves the pipe hop, about 13 words per
+     frame. [on_connect] still runs before the first frame of each connection, so a
+     reconnection's gap is written before any of its frames are read. *)
+  let%map client =
+    Ws_client.connect
+      ~ping:(`Text ({|{"method":"ping"}|}, Time_ns.Span.of_sec 50.))
+      ~max_silent_intervals:1
+      ~on_connect
+      ~on_message:on_frame
+      ~log_name:"hl-client live feed"
+      ?time_source
+      ~url:config.ws_url
+      ()
+    >>| ok_exn
+  in
   let stats () =
     { Stats.frames = counters.frames
     ; parse_errors = counters.parse_errors
@@ -163,10 +168,6 @@ let start
     ; reconnects = Ws_client.reconnects client
     }
   in
-  don't_wait_for
-    (let%map () = Pipe.iter_without_pushback (Ws_client.messages client) ~f:on_frame in
-     Pipes.close pipes;
-     Pipe.close gaps_w);
   let module Feed = struct
     let trades = trades_r
     let bbo = bbo_r
