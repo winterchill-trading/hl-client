@@ -12,8 +12,13 @@
       and [next_funding_time] is the next full hour (Hyperliquid funds hourly). Spot
       contexts have no funding and give nothing.
 
-    Instruments are [Instrument.create Hyperliquid coin]. Frames of other channels
-    (subscription acks, pongs, errors) give [Ok []]. *)
+    Instruments are [Instrument.create Hyperliquid coin], created once per coin and shared
+    by every event of that coin. Frames of other channels (subscription acks, pongs,
+    errors) give [Ok []].
+
+    [trades] and [l2Book] frames are read by {!Frame_scan} without a JSON tree; frames it
+    refuses, and [activeAssetCtx] frames, are decoded with Yojson. Both paths give the
+    same events. *)
 
 open! Core
 
