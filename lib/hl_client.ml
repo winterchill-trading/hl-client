@@ -11,3 +11,4 @@ module Keccak = Keccak
 module Msgpack = Msgpack
 module Signing = Signing
 module Client = Client
+module Leaderboard = Leaderboard

@@ -46,5 +46,8 @@ module Msgpack = Msgpack
 (** EIP-712 signing of exchange actions with a secp256k1 key. *)
 module Signing = Signing
 
+(** The trader leaderboard from the stats host, and ranking helpers. *)
+module Leaderboard = Leaderboard
+
 (** Typed handles: read-only handles cannot reach [/exchange]. *)
 module Client = Client
