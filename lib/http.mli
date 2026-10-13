@@ -20,6 +20,9 @@ val post_json
   -> Yojson.Safe.t
   -> Response.t Or_error.t Deferred.t
 
+(** [get uri] reads the whole response; like [post_json], any status is [Ok]. *)
+val get : ?headers:(string * string) list -> Uri.t -> Response.t Or_error.t Deferred.t
+
 (** [decode_json response ~f] parses the body as JSON and applies [f]; parse and decode
     exceptions, and a non-2xx status, become an [Error] that includes the status and the
     body. *)
