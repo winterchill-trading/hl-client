@@ -36,5 +36,5 @@ let%expect_test "words per frame" =
         ~l2:(words L2 : int)
         ~bbo_only:(words ~streams:[ Bbo ] L2 : int)
         ~funding:(words Funding : int)];
-  [%expect {| ((trades 716) (l2 3882) (bbo_only 3874) (funding 412)) |}]
+  [%expect {| ((trades 45) (l2 271) (bbo_only 19) (funding 411)) |}]
 ;;

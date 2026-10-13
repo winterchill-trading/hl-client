@@ -42,3 +42,13 @@ val streams_of_channel
   :  streams:Market_data.Stream.t list
   -> string
   -> Market_data.Stream.t list
+
+module For_testing : sig
+  (** [frame] through the Yojson decoder only, never the {!Frame_scan} readers: the
+      reference the scanner path is tested against. *)
+  val frame_yojson
+    :  t
+    -> recv_ts:Time_ns.t
+    -> string
+    -> Market_data.Event.t list Or_error.t
+end
