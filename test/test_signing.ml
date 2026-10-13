@@ -215,3 +215,91 @@ let%expect_test "bad keys" =
     false
     |}]
 ;;
+
+(* User-signed actions. The SDK has no approveAgent vector; its usdSend vector
+   ([test_sign_usd_transfer_action], testnet, signatureChainId 0x66eee) goes through the
+   same [user_signed_payload], so it pins the domain and the struct encoding. *)
+let%expect_test "usdSend vector from the SDK" =
+  let digest =
+    Signing.user_signed_digest
+      ~chain_id:0x66eee
+      ~primary_type:"HyperliquidTransaction:UsdSend"
+      [ "hyperliquidChain", String "Testnet"
+      ; "destination", String "0x5e9ee1089755c3435139848e47e6635505d5a13a"
+      ; "amount", String "1"
+      ; "time", Uint64 1687816341423
+      ]
+  in
+  let signature = Signing.sign_digest key digest in
+  print_s [%sexp (signature : Signing.Signature.t)];
+  [%expect
+    {|
+    ((r 0x637b37dd731507cdd24f46532ca8ba6eec616952c56218baeff04144e4a77073)
+     (s 0x11a6a24900e6e314136d2592e2f8d502cd89b7c15b198e1bee043c9589f9fad7)
+     (v 27))
+    |}]
+;;
+
+(* Digests and signatures below were cross-checked against [eth_account]'s
+   [encode_typed_data] and [sign_message] on the SDK's [user_signed_payload] (2026-10-13). *)
+let%expect_test "approvals recover to the signing key" =
+  let agent = Address.of_string "0x00000000000000000000000000000000000000a1" in
+  let builder = Address.of_string "0x00000000000000000000000000000000000000b1" in
+  List.iter
+    [ User_signed_action.approve_agent
+        Testnet
+        ~agent_name:"copy"
+        ~agent_address:agent
+        ~nonce:1
+    ; User_signed_action.approve_agent Testnet ~agent_address:agent ~nonce:1
+    ; User_signed_action.approve_agent
+        Mainnet
+        ~agent_name:"copy"
+        ~agent_address:agent
+        ~nonce:1
+    ; User_signed_action.approve_builder_fee
+        Testnet
+        ~builder
+        ~max_fee_tenths_bp:10
+        ~nonce:2
+    ]
+    ~f:(fun action ->
+      let signature = Signing.sign_user_action key action in
+      print_s
+        [%message
+          (User_signed_action.type_tag action)
+            ~digest:(hex (Signing.user_action_digest action) : string)
+            (signature : Signing.Signature.t)
+            ~signer:(Signing.recover_user_action action signature : Address.t Or_error.t)]);
+  [%expect
+    {|
+    (approveAgent
+     (digest 0x60e74cf2b87f44661b4e2132799d52378a26b6c562fefe1e8f384b9236e8c0cd)
+     (signature
+      ((r 0xa4213abaefe87cb544390cd8935f33ea18e6b83b9bf98f57fbe572f43253498a)
+       (s 0x5cc8cd7f7094e93df578d6bd57116dfc3939965975f44ef2a83f6eb995754618)
+       (v 28)))
+     (signer (Ok 0x14791697260e4c9a71f18484c9f997b308e59325)))
+    (approveAgent
+     (digest 0x75eee0115bb061a6d2b5f89c3f8b1e6ae3eba8069e3531cbab0517d176c81988)
+     (signature
+      ((r 0x1cdb827b2958f2694c08b58194ea141093e0870853c419466eee7d7cb32e8cfd)
+       (s 0x77e61c07547a3d15987117d128ab18716c31971394e550ec5293025b96160359)
+       (v 27)))
+     (signer (Ok 0x14791697260e4c9a71f18484c9f997b308e59325)))
+    (approveAgent
+     (digest 0x578b52ac449b5c51fe239e11f3db946e47c1e66f44288a2791fbbe546183cfcb)
+     (signature
+      ((r 0x2e1b51571811812b374ea70d0b3d38e32f9123f52a77c94277568e3d0802fb7a)
+       (s 0x20b184e633b4a2d54f63021731b41abc39f8ae8ddfb93f1c119c8d67ea22557f)
+       (v 28)))
+     (signer (Ok 0x14791697260e4c9a71f18484c9f997b308e59325)))
+    (approveBuilderFee
+     (digest 0x28ac007d7f67d22f031c1d0d2943921a0f81618df1c3c42525c7f87066ed75db)
+     (signature
+      ((r 0x2ada1a605e91e6ba8ef6375924ef7bf178f61108e741d701eb7ee36697d0d481)
+       (s 0x12b9852efed6ffcd942919a144a4a1e6dee73b4c45331c40b135b95052b46b3f)
+       (v 27)))
+     (signer (Ok 0x14791697260e4c9a71f18484c9f997b308e59325)))
+    |}]
+;;
