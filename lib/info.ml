@@ -60,6 +60,17 @@ let user_fills ?user config =
     | Error _ as e -> e)
 ;;
 
+let user_fills_detailed ?user config =
+  with_user ?user config ~f:(fun user ->
+    Http.post_json (Config.info_uri config) (request_body (User_fills { user }))
+    >>| Or_error.bind
+          ~f:
+            (Http.decode_json
+               ~f:
+                 (Ppx_yojson_conv_lib.Yojson_conv.Primitives.list_of_yojson
+                    User_fill.Detailed.t_of_yojson)))
+;;
+
 let clearinghouse_state ?user config =
   with_user ?user config ~f:(fun user ->
     match%map post config (Clearinghouse_state { user }) with
@@ -123,4 +134,10 @@ let all_user_fills_since
         match Int.compare a.time b.time with
         | 0 -> Int.compare a.tid b.tid
         | c -> c)))
+;;
+
+let max_builder_fee config ~user ~builder =
+  let request = { Max_builder_fee.user; builder } in
+  Http.post_json (Config.info_uri config) (Max_builder_fee.yojson_of_t request)
+  >>| Or_error.bind ~f:(Http.decode_json ~f:Max_builder_fee.response_of_yojson)
 ;;

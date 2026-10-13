@@ -31,6 +31,13 @@ val all_mids : Config.t -> All_mids.t Or_error.t Deferred.t
 val open_orders : ?user:Address.t -> Config.t -> Open_order.t list Or_error.t Deferred.t
 val user_fills : ?user:Address.t -> Config.t -> User_fill.t list Or_error.t Deferred.t
 
+(** [userFills] decoded with {!Hl_protocol.User_fill.Detailed}, keeping each fill's
+    [builderFee] and [liquidation]. *)
+val user_fills_detailed
+  :  ?user:Address.t
+  -> Config.t
+  -> User_fill.Detailed.t list Or_error.t Deferred.t
+
 val clearinghouse_state
   :  ?user:Address.t
   -> Config.t
@@ -61,3 +68,11 @@ val all_user_fills_since
   -> Config.t
   -> start_time:int
   -> User_fill.t list Or_error.t Deferred.t
+
+(** [maxBuilderFee] ({!Hl_protocol.Max_builder_fee}): the largest builder fee [user] has
+    approved for [builder], in tenths of a basis point; [0] when there is no approval. *)
+val max_builder_fee
+  :  Config.t
+  -> user:Address.t
+  -> builder:Address.t
+  -> int Or_error.t Deferred.t
