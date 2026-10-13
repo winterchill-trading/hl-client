@@ -12,3 +12,4 @@ module Msgpack = Msgpack
 module Signing = Signing
 module Client = Client
 module Leaderboard = Leaderboard
+module User_feed = User_feed

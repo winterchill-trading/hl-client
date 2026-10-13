@@ -46,6 +46,9 @@ module Msgpack = Msgpack
 (** EIP-712 signing of exchange actions with a secp256k1 key. *)
 module Signing = Signing
 
+(** Other accounts' fills and positions over one shared websocket connection. *)
+module User_feed = User_feed
+
 (** The trader leaderboard from the stats host, and ranking helpers. *)
 module Leaderboard = Leaderboard
 
