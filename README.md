@@ -105,6 +105,18 @@ val all_user_fills_since : ?user:Address.t -> ?end_time:int -> ?aggregate_by_tim
 exchange keeps the latest 10000). `all_user_fills_since` pages by restarting at the latest
 `time` seen and drops repeated fills by `tid`.
 
+```ocaml
+val user_fills_detailed : ?user:Address.t -> Config.t
+  -> User_fill.Detailed.t list Or_error.t Deferred.t
+val max_builder_fee : Config.t -> user:Address.t -> builder:Address.t
+  -> int Or_error.t Deferred.t
+```
+
+`user_fills_detailed` keeps each fill's `builderFee` (the builder's part of `fee`, absent
+when zero) and `liquidation`, which `User_fill.t` drops. `max_builder_fee` is the fee
+`user` has approved for `builder` in tenths of a basis point, `0` when none; check it
+before sending orders with `?builder`, or the exchange rejects them.
+
 ### `Exchange` (`POST /exchange`)
 
 ```ocaml
