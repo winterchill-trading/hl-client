@@ -33,4 +33,6 @@
   yojson
   async_websocket
   uri
+  (cohttp :with-test)
+  (cohttp-async :with-test)
   (core_bench :with-test)))
