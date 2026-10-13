@@ -465,6 +465,31 @@ the events: a trade is a record, its `Event.t` box, a list cell and the `trade_i
 string; an L2 snapshot is a list cell and a record per level. The pinned counts are in
 `test_normalizer_words.ml` (whole frames) and `test_frame_scan.ml` (0 words per read).
 
+#### Live feed delivery
+
+`Live_feed` takes frames from `Venue_net.Ws_client` through `on_message`, straight from
+the connection's frame pipe, instead of reading `Ws_client.messages` one frame at a time
+(about 13 words per frame for the extra pipe hop). `on_connect` still runs before the
+first frame of each connection, so the `Resync` gap keeps coming before the fresh
+snapshot. `test_live_feed_words.ml` pins the words a frame costs in the feed on top of
+the websocket transport (74 before, 61 after).
+
+`dune exec ./bench/feed/feed.exe` runs the feed against an in-process websocket server
+(`test/blast/`) that writes one pre-encoded single-trade frame (304 bytes) 1,000 per
+write (burst) or one per write, next to a bare `Ws_client` that only counts frames
+(the floor). Release profile, arm64 laptop (CI is amd64), best of five runs; times vary
+by 10% between runs, words are exact:
+
+| | before (`messages`) | after (`on_message`) | words before | words after |
+| --- | ---: | ---: | ---: | ---: |
+| burst, ws floor | 158 to 172 ns | 155 to 200 ns | 49.3 | 49.3 |
+| burst, live feed | 1171 to 1210 ns (0.85 M frames/s) | 1226 to 1264 ns (0.82 M frames/s) | 123.7 | 110.7 |
+| one per write, ws floor | 2.20 us | 2.34 us | 202.1 | 202.1 |
+| one per write, live feed | 3.49 to 3.82 us | 3.72 to 4.13 us | 278.0 | 264.8 |
+
+The hop was a few percent of a frame's time; the rest is `Normalizer.frame` (above) and
+the trades pipe, so frames/s did not move outside the noise.
+
 ## CLI
 
 `hl-cli` (`bin/hl_cli.ml`) is a smoke-testing tool:
@@ -512,7 +537,8 @@ decoding (including error cases), nonce ordering, Keccak-256 and MessagePack vec
 the SDK signing vectors, typed handles, websocket message encoding and decoding,
 `Normalizer` and `Live_feed` normalization of captured frames, the `Frame_scan` readers
 against the Yojson path and `Fixed_decimal.of_string` (expect and quickcheck), words per
-frame pinned, `rebuild-norm` over the recorded minute, and loopback tests that run a websocket
+frame pinned (also the feed's words on top of the websocket, against a local server
+that writes pre-encoded frames), `rebuild-norm` over the recorded minute, and loopback tests that run a websocket
 server on `127.0.0.1` to check subscribe, server-initiated close, reconnect,
 resubscription, ping/pong, silent-connection detection and shutdown. The reconnect tests
 in `test_reconnect_fake_clock.ml` step the backoff on a synthetic `Time_source` (no
