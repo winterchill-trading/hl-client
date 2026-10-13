@@ -1,0 +1,8 @@
+; A websocket server that writes many pre-encoded frames, and the per-frame measurement
+; of the live feed against it; shared by the words-per-frame test and the feed benchmark.
+
+(library
+ (name hl_client_blast)
+ (libraries core async async_websocket hl-client market-data venue-net uri)
+ (preprocess
+  (pps ppx_jane)))
