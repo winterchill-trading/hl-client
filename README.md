@@ -94,6 +94,17 @@ val meta : Config.t -> Meta.t Or_error.t Deferred.t
 `?user` defaults to `Config.address`; the call fails if neither is set. `request_body`
 and `decode` expose the pure encoding and decoding steps.
 
+```ocaml
+val user_fills_by_time : ?user:Address.t -> ?end_time:int -> ?aggregate_by_time:bool
+  -> Config.t -> start_time:int -> User_fill.t list Or_error.t Deferred.t
+val all_user_fills_since : ?user:Address.t -> ?end_time:int -> ?aggregate_by_time:bool
+  -> ?max_pages:int -> Config.t -> start_time:int -> User_fill.t list Or_error.t Deferred.t
+```
+
+`userFillsByTime` works for any address and returns at most 2000 fills per call (the
+exchange keeps the latest 10000). `all_user_fills_since` pages by restarting at the latest
+`time` seen and drops repeated fills by `tid`.
+
 ### `Exchange` (`POST /exchange`)
 
 ```ocaml
@@ -120,6 +131,28 @@ val modify : ... -> Modify_request.t -> ...
   status; `Exchange_response.Err msg` is a successful call with a rejected action.
 - Per-order outcomes are in `Exchange_response.Ok (Order statuses)`.
 - `build_request` and `decode` expose the pure steps.
+
+Builder fees and approvals:
+
+```ocaml
+val place_orders : ... -> ?builder:Builder_fee.t -> Order_request.t list -> ...
+val approve_agent : Config.t -> key:Signing.Private_key.t
+  -> hyperliquid_chain:User_signed_action.Hyperliquid_chain.t -> ?nonce:int
+  -> ?valid_until:Time_ns.t -> agent_address:Address.t -> agent_name:string -> unit
+  -> Exchange_response.t Or_error.t Deferred.t
+val approve_builder_fee : Config.t -> key:Signing.Private_key.t
+  -> hyperliquid_chain:User_signed_action.Hyperliquid_chain.t -> ?nonce:int
+  -> builder:Address.t -> max_fee_tenths_bp:int -> unit
+  -> Exchange_response.t Or_error.t Deferred.t
+```
+
+- With `builder`, the order action gets `"builder": {"b", "f"}` after `grouping` (the
+  SDK's key order, which the L1 hash depends on) and goes out through `post_envelope`.
+  `f` is in tenths of a basis point; perps cap it at 100 (0.1%).
+- Approvals are user-signed (see `Signing`) with the account's own key; the signature is
+  recovered and checked against the key before the request is sent. Agents are always
+  named (`agent_name`), optionally with `valid_until` (at most 180 days ahead, appended
+  as `" valid_until <ms>"`). Use a fresh agent address every time.
 
 ### `Signing`
 
@@ -159,8 +192,25 @@ The tests reproduce every L1 vector of the SDK's `tests/signing_test.py` (orders
 without cloid, trigger orders, vault, `createSubAccount`, `scheduleCancel`, and the
 production phantom-agent hash). A live check against testnet with a freshly generated
 key gave `User or API Wallet 0x04c6...dab5 does not exist.`, i.e. the exchange recovered
-the address the key derives, so the signature is accepted as that account's. User-signed
-actions (transfers, withdrawals) are not implemented.
+the address the key derives, so the signature is accepted as that account's.
+
+User-signed actions (`approveAgent`, `approveBuilderFee`):
+
+```ocaml
+val user_signed_digest : chain_id:int -> primary_type:string
+  -> (string * User_signed_action.Eip712.Value.t) list -> string
+val user_action_digest : User_signed_action.t -> string
+val sign_user_action : Private_key.t -> User_signed_action.t -> Signature.t
+val recover_user_action : User_signed_action.t -> Signature.t -> Address.t Or_error.t
+```
+
+These are EIP-712 typed data signed directly (the SDK's `sign_user_signed_action`):
+domain `HyperliquidSignTransaction`, version `1`, `chainId` = the action's
+`signatureChainId` (`0x66eee` by default, as the SDK sends; any chain is accepted,
+`hyperliquidChain` picks mainnet or testnet), verifying contract `0x0`; primary type
+`HyperliquidTransaction:ApproveAgent` or `...:ApproveBuilderFee`. The SDK's `usdSend`
+vector reproduces exactly, and the approval digests and signatures in the tests match
+`eth_account`'s `encode_typed_data` on the SDK payload. Not yet checked against testnet.
 
 ### `Client` (typed handles)
 
@@ -183,6 +233,47 @@ key signs every request (the key's address becomes the default `user` when the c
 none); without a key it sends unsigned requests, which is what the simulator wants.
 `is_mainnet` defaults to whether the host is `api.hyperliquid.xyz`. The untyped `Info`
 and `Exchange` functions over a bare `Config.t` stay as they were.
+
+```ocaml
+val trading_with_agent : ?is_mainnet:bool -> agent_key:Signing.Private_key.t
+  -> account_address:Address.t -> Config.t -> trading t
+val approve_agent : ?nonce:int -> ?valid_until:Time_ns.t -> trading t
+  -> agent_address:Address.t -> agent_name:string -> Exchange_response.t Or_error.t Deferred.t
+val approve_builder_fee : ?nonce:int -> trading t -> builder:Address.t
+  -> max_fee_tenths_bp:int -> Exchange_response.t Or_error.t Deferred.t
+```
+
+An agent handle signs orders, cancels and modifies with the approved agent key for
+`account_address` (no `vaultAddress`; the exchange maps the agent to its account), uses
+the account as the default `user` and `X-Address`, and refuses to sign approvals, which
+need the account's own key.
+
+### `User_feed` (other accounts' fills)
+
+```ocaml
+val create : ?max_users:int -> ... -> Config.t -> t Or_error.t Deferred.t
+val subscribe : t -> address:Address.t -> Update.t Pipe.Reader.t Or_error.t Deferred.t
+(* Update.t = Fills {user; is_snapshot; fills} | Position {user; coin; szi; time} | Resync {user} *)
+```
+
+One websocket connection carries one `userFills` subscription per address, shared by all
+consumers of that address (Hyperliquid allows 10 user addresses per connection and IP;
+`subscribe` fails beyond `max_users`). Fills are de-duplicated by `tid` across the
+snapshot the server resends after every reconnect; after each batch the position of every
+touched coin (`startPosition` plus the signed size of its latest fill) follows. A consumer
+that joins later first gets the known positions. `orderUpdates` frames carry no user, so
+they are not shared this way.
+
+### `Leaderboard`
+
+```ocaml
+val fetch : ?network:[ `Mainnet | `Testnet ] -> ?uri:Uri.t -> unit -> Leaderboard.t Or_error.t Deferred.t
+val rank : ?min_account_value:float -> Leaderboard.t -> window:Leaderboard.Window.t
+  -> by:[ `Pnl | `Roi | `Volume ] -> limit:int -> (Leaderboard.Row.t * Leaderboard.Performance.t) list
+```
+
+`GET stats-data.hyperliquid.xyz/<Mainnet|Testnet>/leaderboard`, the whole board in one
+response (about 20 MB).
 
 ### `Ws` (websocket)
 
