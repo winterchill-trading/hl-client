@@ -1,0 +1,3 @@
+The first fill is the userFills example from the info endpoint docs. The other two follow
+the websocket docs' WsFill/FillLiquidation types (markPx as a number and as a string,
+liquidatedUser present and absent); the docs give no liquidation example.

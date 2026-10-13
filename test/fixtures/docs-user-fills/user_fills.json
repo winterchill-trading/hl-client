@@ -1,0 +1,57 @@
+[
+  {
+    "closedPnl": "0.0",
+    "coin": "AVAX",
+    "crossed": false,
+    "dir": "Open Long",
+    "hash": "0xa166e3fa63c25663024b03f2e0da011a00307e4017465df020210d3d432e7cb8",
+    "oid": 90542681,
+    "px": "18.435",
+    "side": "B",
+    "startPosition": "26.86",
+    "sz": "93.53",
+    "time": 1681222254710,
+    "fee": "0.01",
+    "feeToken": "USDC",
+    "builderFee": "0.01",
+    "tid": 118906512037719
+  },
+  {
+    "closedPnl": "-12.5",
+    "coin": "ETH",
+    "crossed": true,
+    "dir": "Close Long",
+    "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "oid": 90542682,
+    "px": "2400.1",
+    "side": "A",
+    "startPosition": "1.5",
+    "sz": "1.5",
+    "time": 1681222254711,
+    "fee": "1.62",
+    "feeToken": "USDC",
+    "tid": 118906512037720,
+    "liquidation": {
+      "liquidatedUser": "0x00000000000000000000000000000000000000aa",
+      "markPx": 2399.8,
+      "method": "market"
+    }
+  },
+  {
+    "closedPnl": "0.0",
+    "coin": "BTC",
+    "crossed": true,
+    "dir": "Open Short",
+    "hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "oid": 90542683,
+    "px": "100000",
+    "side": "A",
+    "startPosition": "0",
+    "sz": "0.01",
+    "time": 1681222254712,
+    "fee": "0.45",
+    "feeToken": "USDC",
+    "tid": 118906512037721,
+    "liquidation": { "markPx": "99990.5", "method": "backstop" }
+  }
+]
