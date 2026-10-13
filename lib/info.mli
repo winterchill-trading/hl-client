@@ -37,3 +37,27 @@ val clearinghouse_state
   -> Clearinghouse_state.t Or_error.t Deferred.t
 
 val meta : Config.t -> Meta.t Or_error.t Deferred.t
+
+(** [userFillsByTime] ({!Hl_protocol.User_fills_by_time}): fills of [user] (any address)
+    with [start_time <= time <= end_time], times in epoch milliseconds. At most
+    {!Hl_protocol.User_fills_by_time.max_fills_per_response} per call. *)
+val user_fills_by_time
+  :  ?user:Address.t
+  -> ?end_time:int
+  -> ?aggregate_by_time:bool
+  -> Config.t
+  -> start_time:int
+  -> User_fill.t list Or_error.t Deferred.t
+
+(** Every fill from [start_time], paging as the docs suggest: the next page starts at the
+    latest [time] seen, and fills already returned are dropped by [tid]. Stops at a page
+    shorter than the page size, at a page with nothing new, or after [max_pages] (default
+    5, the 10000 fills the exchange keeps). Sorted by [time], then [tid]. *)
+val all_user_fills_since
+  :  ?user:Address.t
+  -> ?end_time:int
+  -> ?aggregate_by_time:bool
+  -> ?max_pages:int
+  -> Config.t
+  -> start_time:int
+  -> User_fill.t list Or_error.t Deferred.t

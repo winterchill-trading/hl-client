@@ -74,3 +74,53 @@ let meta config =
   | Ok other -> unexpected other
   | Error _ as e -> e
 ;;
+
+let user_fills_by_time ?user ?end_time ?aggregate_by_time config ~start_time =
+  with_user ?user config ~f:(fun user ->
+    let request = { User_fills_by_time.user; start_time; end_time; aggregate_by_time } in
+    Http.post_json (Config.info_uri config) (User_fills_by_time.yojson_of_t request)
+    >>| Or_error.bind ~f:(Http.decode_json ~f:User_fills_by_time.response_of_yojson))
+;;
+
+let all_user_fills_since
+  ?user
+  ?end_time
+  ?aggregate_by_time
+  ?(max_pages = 5)
+  config
+  ~start_time
+  =
+  with_user ?user config ~f:(fun user ->
+    let seen = Int.Hash_set.create () in
+    let rec loop ~pages ~start_time acc =
+      match%bind
+        user_fills_by_time ~user ?end_time ?aggregate_by_time config ~start_time
+      with
+      | Error _ as error -> return error
+      | Ok page ->
+        let fresh =
+          List.filter page ~f:(fun (fill : User_fill.t) ->
+            if Hash_set.mem seen fill.tid
+            then false
+            else (
+              Hash_set.add seen fill.tid;
+              true))
+        in
+        let acc = fresh @ acc in
+        let latest =
+          List.fold page ~init:start_time ~f:(fun latest (fill : User_fill.t) ->
+            Int.max latest fill.time)
+        in
+        if List.length page < User_fills_by_time.max_fills_per_response
+           || List.is_empty fresh
+           || pages + 1 >= max_pages
+        then return (Ok acc)
+        else loop ~pages:(pages + 1) ~start_time:latest acc
+    in
+    let%map fills = loop ~pages:0 ~start_time [] in
+    Or_error.map fills ~f:(fun fills ->
+      List.sort fills ~compare:(fun (a : User_fill.t) (b : User_fill.t) ->
+        match Int.compare a.time b.time with
+        | 0 -> Int.compare a.tid b.tid
+        | c -> c)))
+;;
